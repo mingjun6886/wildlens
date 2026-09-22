@@ -1,0 +1,34 @@
+# ML model weights — never commit (200-270 MB each)
+*.pt
+*.pth
+*.onnx
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+# Note: .terraform.lock.hcl IS committed — it pins provider versions so that
+# a local plan and a CI plan resolve to the same provider builds.
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node / web
+node_modules/
+dist/
+
+# Secrets and local overrides
+.env
+*.local.env
+credentials
+
+# macOS
+.DS_Store
