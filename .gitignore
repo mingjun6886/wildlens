@@ -32,3 +32,10 @@ credentials
 
 # macOS
 .DS_Store
+
+# Vietnamese working notes live outside the repository (~/Projects/wildlens-vi).
+# These patterns are a safety net in case one is ever copied in by mistake.
+*-vi.*
+*.vi.md
+/vi/
+docs/vi/

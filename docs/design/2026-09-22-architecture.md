@@ -1,142 +1,142 @@
-# WildLens — Bản đặc tả thiết kế
+# WildLens — Design
 
-**Ngày:** 2026-09-22
-**Trạng thái:** Đã duyệt, sẵn sàng lập kế hoạch triển khai
-**Tác giả:** Minh Quan Nguyen
+**Date:** 2026-09-22
+**Status:** Approved; implementation planning under way
+**Author:** Minh Quan Nguyen
 
 ---
 
-## 1. Mục tiêu
+## 1. Goals
 
-Dựng lại solo một nền tảng nhận diện động vật hoang dã serverless, làm sản phẩm trưng bày trong hồ sơ xin việc.
+Rebuild a serverless wildlife-identification platform solo, as a portfolio piece.
 
-**Bối cảnh:** Hệ thống này bắt nguồn từ một bài tập nhóm 4 người ở đại học (FIT5225, Monash). Bản dựng lại này được viết lại từ đầu bởi một người, trên tài khoản AWS cá nhân, với những thay đổi kiến trúc có chủ đích. README công khai sẽ ghi rõ nguồn gốc này.
+**Provenance.** The problem domain originates from a four-person university group assignment (FIT5225, Monash University). This is an independent rebuild by one person, on a personal AWS account, with deliberate architectural changes. The README states this openly.
 
-**Đích nghề nhắm tới:** Cloud / DevOps / Platform Engineer, kết hợp ML Engineer. Thiết kế vì vậy ưu tiên: hạ tầng bằng code, CI/CD, khả năng quan sát, xử lý lỗi, kiểm soát chi phí, giảm độ trễ, quản lý phiên bản mô hình, và đo đạc độ chính xác của mô hình.
+**Target roles.** Cloud / DevOps / Platform engineering, combined with ML engineering. The design therefore weights infrastructure as code, CI/CD, observability, failure handling, cost control, latency reduction, model versioning, and measured model accuracy.
 
-**Ngân sách:** $100 credit AWS. Không được vượt.
+**Budget.** $100 of AWS credit. Not to be exceeded.
 
-### Tiêu chí thành công
+### Success criteria
 
-| # | Tiêu chí | Cách đo |
+| # | Criterion | How it is measured |
 |---|---|---|
-| S1 | Toàn bộ hạ tầng dựng và xoá được bằng một lệnh | `terraform apply` / `terraform destroy` chạy sạch từ số không |
-| S2 | Có con số cải thiện độ trễ thật | Đo p95 khởi động nguội trước và sau khi tối ưu, ghi vào README |
-| S3 | Có con số độ chính xác mô hình thật | Bộ chấm điểm chạy trên 26 ảnh test, xuất báo cáo từng loài |
-| S4 | Chi phí có trần cứng | Không kịch bản lỗi nào vượt được $5/ngày |
-| S5 | Sự cố có thể chẩn đoán được | Một mã lần chạy lần ra được toàn bộ hành trình của một file |
-| S6 | Không có bí mật dài hạn nào trong repo | CI dùng OIDC, không có khoá truy cập AWS được lưu |
+| S1 | The whole estate stands up and tears down with one command | `terraform apply` / `terraform destroy` run clean from nothing |
+| S2 | A real latency improvement, not a claimed one | p95 cold start measured before and after optimisation, recorded in the README |
+| S3 | A real accuracy figure, not a claimed one | Evaluation harness scores the 26-image test set and emits a per-species report |
+| S4 | Spend has a hard ceiling | No failure mode can exceed roughly $5 per day |
+| S5 | Incidents are diagnosable | One correlation ID traces a file across every function |
+| S6 | No long-lived secrets in the repository | CI authenticates through OIDC; no AWS access keys are stored |
 
-### Ngoài phạm vi
+### Out of scope
 
-- Nhiều môi trường (chỉ làm `dev`)
-- Xác thực phân quyền theo vai trò — mọi người dùng đã đăng nhập đều bình đẳng
-- Giao diện quản lý sửa nhãn / xoá hàng loạt (API xoá tối giản vẫn có, để dọn dữ liệu test)
-- Tối ưu chi phí cho quy mô sản xuất thật (ví dụ chuyển sang chỉ mục thay vì quét toàn bảng)
+- Multiple environments — `dev` only
+- Role-based authorisation; every authenticated user is equal
+- A management UI for bulk tag editing and deletion (a minimal delete endpoint exists, for clearing test data)
+- Production-scale query optimisation, such as replacing table scans with a secondary index
 
 ---
 
-## 2. Quyết định kiến trúc
+## 2. Architecture decisions
 
-Sáu quyết định dưới đây là những chỗ bản này **khác** bài tập gốc. Mỗi quyết định sẽ có một file ADR tương ứng.
+The six decisions below are where this build departs from the original coursework. Each gets an ADR.
 
-| # | Quyết định | Lý do |
+| # | Decision | Rationale |
 |---|---|---|
-| AD-1 | Hạ tầng bằng **Terraform**, không bấm chuột | Một công cụ quản được cả AWS lẫn GCP. `destroy` bảo vệ credit. Được nhắc tới nhiều nhất trong tin tuyển dụng |
-| AD-2 | Vùng **ap-southeast-2** (Sydney) | Gần người dùng; bài gốc dùng us-east-1 chỉ vì lớp học bắt buộc |
-| AD-3 | **SQS + DLQ** giữa S3 và Lambda xử lý | Trần chi phí cứng, thử lại có kiểm soát, file hỏng không bị mất |
-| AD-4 | Mô hình **nhúng vào image, cho phép ghi đè từ S3** | Khởi động nguội nhanh mà vẫn giữ được khả năng đổi mô hình không cần sửa code |
-| AD-5 | **Không dùng VPC** | Lambda trong VPC cần NAT Gateway: $32/tháng tính theo giờ, đổi lấy con số không. Mọi dịch vụ được gọi đều là điểm cuối công khai đã có IAM bảo vệ |
-| AD-6 | **Bản ghi trạng thái ghi sớm** (PENDING → DONE) | Cho phép giao diện hiện tiến trình thay vì treo 3 phút |
+| AD-1 | **Terraform** for all infrastructure; no console clicking | One tool covers both AWS and GCP. `destroy` protects the credit. Most frequently named in job listings |
+| AD-2 | Region **ap-southeast-2** (Sydney) | Closest to users; the original used us-east-1 only because the lab mandated it |
+| AD-3 | **SQS + DLQ** between S3 and the processing Lambda | Hard spend ceiling, controlled retries, failed messages preserved rather than lost |
+| AD-4 | Models **baked into the image, overridable from S3** | Fast cold start without losing the ability to swap models by configuration alone |
+| AD-5 | **No VPC** | A VPC-attached Lambda needing egress requires a NAT Gateway: $32/month billed hourly, in exchange for nothing. Every service called is a public endpoint already gated by IAM |
+| AD-6 | **Status record written early** (PENDING → DONE) | Lets the UI show progress instead of hanging for three minutes |
 
 ---
 
-## 3. Kiến trúc
+## 3. Architecture
 
-### 3.1 Sơ đồ thành phần
+### 3.1 Components
 
 ```
         ┌──────────────────────────────┐
-        │  CloudFront + S3 (web tĩnh)  │
+        │  CloudFront + S3 static site │
         └──────────────┬───────────────┘
-                       │  JWT ở header Authorization
+                       │  JWT in the Authorization header
                        ▼
         ┌──────────────────────┐     ┌──────────────┐
-        │   API Gateway (REST) │◄────┤   Cognito    │
-        │   Cognito Authorizer │     │  User Pool   │
+        │  API Gateway (REST)  │◄────┤   Cognito    │
+        │  Cognito authoriser  │     │  user pool   │
         └──────────┬───────────┘     └──────────────┘
                    │
       ┌────────────┴─────────────┐
-      │  Lambda zip (Python 3.11)│
-      │  upload · search · status│
-      │  delete                  │
+      │  Zip Lambdas (Python 3.11)│
+      │  upload · search · status │
+      │  delete · subscribe       │
       └────────────┬─────────────┘
                    │
    ┌───────────────┼──────────────────────────────────┐
    │               ▼                                  ▼
    │       ┌──────────────┐                  ┌────────────────┐
-   │       │  S3 kho thô  │                  │   DynamoDB     │
+   │       │  S3 raw      │                  │   DynamoDB     │
    │       └──────┬───────┘                  │ wildlens-files │
    │              │ ObjectCreated            └────────▲───────┘
    │              ▼                                   │
-   │       ┌──────────────┐   hỏng 3 lần   ┌────────┐ │
-   │       │     SQS      │───────────────►│  DLQ   │ │
-   │       └──────┬───────┘                └────┬───┘ │
-   │              │ trần đồng thời = 2          │     │
-   │              ▼                          cảnh báo │
-   │    ┌─────────────────────┐                 │     │
-   │    │ Lambda container AI │─────────────────┼─────┘
-   │    │ 4 GB · 900 s        │                 │
-   │    │ MegaDetector→       │                 ▼
-   │    │ SpeciesNet          │           ┌──────────┐
-   │    └──────┬───────┬──────┘           │   SNS    │
-   │           │       │                  └──────────┘
+   │       ┌──────────────┐  3 failures   ┌────────┐  │
+   │       │     SQS      │──────────────►│  DLQ   │  │
+   │       └──────┬───────┘               └────┬───┘  │
+   │              │ concurrency cap = 2        │      │
+   │              ▼                          alarm    │
+   │    ┌─────────────────────┐                │      │
+   │    │ Container Lambda    │────────────────┼──────┘
+   │    │ 4 GB · 900 s        │                │
+   │    │ MegaDetector →      │                ▼
+   │    │ SpeciesNet          │          ┌──────────┐
+   │    └──────┬───────┬──────┘          │   SNS    │
+   │           │       │                 └──────────┘
    │           ▼       ▼
    │   ┌───────────┐ ┌──────────┐
-   │   │S3 ảnh nhỏ │ │   ECR    │
+   │   │S3 thumbs  │ │   ECR    │
    │   └───────────┘ └──────────┘
    │
-   └── Quan sát: X-Ray · CloudWatch Dashboard · Alarms · log JSON giữ 14 ngày
+   └── Observability: X-Ray · CloudWatch dashboard · alarms · JSON logs, 14-day retention
 
-   ☁️ GCP Cloud Run: điểm cuối /resolve, tự xác minh JWT do Cognito cấp
+   GCP Cloud Run: a /resolve endpoint that verifies the Cognito-issued JWT itself
 ```
 
-### 3.2 Tài nguyên AWS
+### 3.2 AWS resources
 
-| Tài nguyên | Tên | Ghi chú |
+| Resource | Name | Notes |
 |---|---|---|
-| S3 | `wildlens-raw-<hậu tố>` | Ảnh/video gốc. Chặn truy cập công khai. Luật dọn: xoá sau 30 ngày |
-| S3 | `wildlens-thumb-<hậu tố>` | Ảnh thu nhỏ |
-| S3 | `wildlens-models-<hậu tố>` | Mô hình để ghi đè phiên bản; không phải đường nạp mặc định |
-| S3 | `wildlens-web-<hậu tố>` | Web tĩnh, phục vụ qua CloudFront |
-| DynamoDB | `wildlens-files` | Khoá chính `fileId`. Chế độ theo lượt dùng. Bật TTL trên trường `ttl` |
-| SQS | `wildlens-ingest` | Thời gian ẩn phiếu 5400 s. maxReceiveCount = 3 |
-| SQS | `wildlens-ingest-dlq` | Không nối với Lambda nào. Giữ phiếu 14 ngày |
-| Lambda | `wildlens-process` | Ảnh container. 4096 MB, 900 s, `/tmp` 4096 MB, x86_64, đồng thời tối đa 2 |
+| S3 | `wildlens-raw-<suffix>` | Originals. Public access blocked. Lifecycle expiry at 30 days |
+| S3 | `wildlens-thumb-<suffix>` | Thumbnails |
+| S3 | `wildlens-models-<suffix>` | Model override versions; not the default load path |
+| S3 | `wildlens-web-<suffix>` | Static site, served through CloudFront |
+| DynamoDB | `wildlens-files` | Partition key `fileId`. On-demand capacity. TTL enabled on the `ttl` attribute |
+| SQS | `wildlens-ingest` | Visibility timeout 5400 s. `maxReceiveCount` 3 |
+| SQS | `wildlens-ingest-dlq` | No consumer attached. 14-day retention |
+| Lambda | `wildlens-process` | Container image. 4096 MB, 900 s, 4096 MB `/tmp`, x86_64, reserved concurrency 2 |
 | Lambda | `wildlens-upload` / `-search` / `-status` / `-delete` / `-subscribe` | Zip, Python 3.11, 512 MB |
-| ECR | `wildlens-process` | Luật dọn: giữ 3 ảnh gần nhất |
-| Cognito | `wildlens-users` | Email + họ tên, xác thực email, Hosted UI |
-| API Gateway | REST | Cognito Authorizer trên **mọi** route |
-| SNS | `wildlens-tags` | Đăng ký email kèm FilterPolicy theo loài |
-| CloudWatch | Log group cho mỗi Lambda | **Giữ 14 ngày, khai báo tường minh** |
+| ECR | `wildlens-process` | Lifecycle policy retaining the three most recent images |
+| Cognito | `wildlens-users` | Email plus given and family name, email verification, Hosted UI |
+| API Gateway | REST | Cognito authoriser on **every** route |
+| SNS | `wildlens-tags` | Email subscriptions with per-species filter policies |
+| CloudWatch | One log group per function | **14-day retention, declared explicitly** |
 
-Hậu tố là một chuỗi ngẫu nhiên 6 ký tự do Terraform sinh, vì tên bucket S3 phải duy nhất toàn cầu.
+The suffix is a six-character random string generated by Terraform, because S3 bucket names are globally unique.
 
 ---
 
-## 4. Mô hình dữ liệu
+## 4. Data model
 
-### 4.1 Bản ghi DynamoDB
+### 4.1 DynamoDB record
 
 ```json
 {
-  "fileId":       "a3f9c2… (SHA-256 hex, khoá chính)",
+  "fileId":       "a3f9c2… (SHA-256 hex, partition key)",
   "status":       "PENDING | PROCESSING | DONE | FAILED",
   "type":         "image | video",
   "s3Key":        "a3f9c2….jpg",
   "thumbKey":     "a3f9c2….jpg | null",
   "tags":         { "wild boar": 1 },
-  "uploadedBy":   "nguoi@vidu.com",
+  "uploadedBy":   "someone@example.com",
   "createdAt":    1758499200,
 
   "modelVersion": "v1",
@@ -149,187 +149,189 @@ Hậu tố là một chuỗi ngẫu nhiên 6 ký tự do Terraform sinh, vì tê
 }
 ```
 
-**Quy ước về các trường:**
+**Field conventions**
 
-- `fileId` là SHA-256 của **nội dung** file, không phải tên file. Nó vừa là khoá chính, vừa là khoá đối tượng trên S3, vừa là cơ chế chống trùng.
-- `s3Key` / `thumbKey` lưu khoá đối tượng, **không lưu URL**. URL được ký lúc đọc. Bài gốc lưu URL đầy đủ và phải cắt chuỗi để lấy lại khoá — cách đó dễ vỡ.
-- `ttl` chỉ có giá trị khi `status = PENDING`. Chuyển sang `DONE` thì trường này bị **gỡ bỏ** (dùng `REMOVE` trong biểu thức cập nhật), khiến bản ghi sống vĩnh viễn.
-- `tags` rỗng `{}` là kết quả hợp lệ (ảnh không có con vật nào), khác với `null`.
-- `frameCount` chỉ có giá trị với video.
+- `fileId` is the SHA-256 of the file **content**, not its name. It serves as partition key, S3 object key, and deduplication token at once.
+- `s3Key` and `thumbKey` store object keys, **not URLs**. URLs are signed at read time. The original stored full URLs and recovered the key by string-splitting, which is brittle.
+- `ttl` is set only while `status` is `PENDING`. The transition to `DONE` **removes** the attribute (via `REMOVE` in the update expression), making the record permanent.
+- An empty `tags` map is a valid result — an image containing no animals — and is distinct from `null`.
+- `frameCount` is populated for video only.
 
-### 4.2 Luồng chuyển trạng thái
+### 4.2 State transitions
 
-| Từ | Sang | Ai ghi | Điều kiện |
+| From | To | Written by | Condition |
 |---|---|---|---|
 | — | `PENDING` | `wildlens-upload` | `attribute_not_exists(fileId)` |
 | `PENDING` | `PROCESSING` | `wildlens-process` | `status = PENDING` |
-| `PROCESSING` | `DONE` | `wildlens-process` | `status <> DONE` ← **chốt chống trùng** |
-| `PROCESSING` | `FAILED` | `wildlens-process` | lỗi vĩnh viễn, hoặc hết lượt thử |
+| `PROCESSING` | `DONE` | `wildlens-process` | `status <> DONE` ← **the idempotency guard** |
+| `PROCESSING` | `FAILED` | `wildlens-process` | Permanent error, or retries exhausted |
 
-Điều kiện ở hàng thứ ba là cơ chế đảm bảo tính bất biến khi lặp. SQS loại thường giao *ít nhất một lần*; nếu một phiếu được giao hai lần, lần ghi thứ hai bị DynamoDB từ chối với `ConditionalCheckFailedException`. Lambda bắt lỗi này, ghi log ở mức INFO, và kết thúc thành công — **không** ném lỗi, vì ném lỗi sẽ khiến phiếu quay lại hàng đợi.
+The condition on the third row is what makes processing idempotent. Standard SQS delivers *at least once*; on a redelivery the second write is rejected with `ConditionalCheckFailedException`. The worker catches that specific exception, logs at INFO, and exits successfully — it must **not** raise, because raising would return the message to the queue.
 
 ---
 
-## 5. Hợp đồng API
+## 5. API contract
 
-Tất cả route đều nằm sau Cognito Authorizer. Tất cả phản hồi đều là JSON.
+Every route sits behind the Cognito authoriser. All responses are JSON.
 
-| Route | Thân yêu cầu | Trả về |
+| Route | Request body | Response |
 |---|---|---|
 | `POST /upload` | `{sha256, ext, size}` | `{duplicate: bool, uploadUrl?, key?}` |
 | `GET /files/{fileId}` | — | `{status, tags?, thumbUrl?, fullUrl?, errorReason?}` |
 | `POST /search/tags` | `{"wombat": 2, "magpie": 1}` | `{results: [{fileId, thumbUrl, fullUrl, tags}]}` |
-| `POST /search/species` | `["dingo", "koala"]` | như trên |
-| `POST /search/byfile` | `{file: "<base64>", ext}` | như trên |
+| `POST /search/species` | `["dingo", "koala"]` | as above |
+| `POST /search/byfile` | `{file: "<base64>", ext}` | as above |
 | `POST /subscribe` | `{email, tag, operation}` | `{ok, tags}` |
 | `POST /files/delete` | `{fileIds: [...]}` | `{ok, deleted}` |
 | `POST /resolve` *(GCP)* | `{thumbUrl}` | `{fullUrl}` |
 
-**Ngữ nghĩa tìm kiếm:**
-- `/search/tags` — phép **VÀ** logic kèm số lượng tối thiểu. Một file khớp khi với mọi cặp `(loài, n)` trong yêu cầu, file đó có `tags[loài] >= n`.
-- `/search/species` — phép **HOẶC**. Một file khớp khi chứa **bất kỳ** loài nào trong danh sách, số lượng ≥ 1.
-- `/search/byfile` — chạy nhận diện trên file gửi lên, rồi trả về các file có tập nhãn **bao hàm** tập nhãn của file truy vấn. **File truy vấn tuyệt đối không được lưu lại.**
+**Search semantics**
 
-`/search/byfile` do `wildlens-search` phục vụ, nhưng nó **không tự nạp mô hình**. Nó gọi đồng bộ `wildlens-process` với payload `{"query_mode": true, "file_bytes": "<base64>", "ext": "jpg"}`; Lambda xử lý trả về `{"tags": {...}}` mà không ghi gì vào DynamoDB, S3 hay SNS. Nhờ vậy chỉ một Lambda duy nhất trong hệ thống phải mang theo mô hình.
+- `/search/tags` — logical **AND** with minimum counts. A file matches when, for every `(species, n)` pair in the request, `tags[species] >= n`.
+- `/search/species` — logical **OR**. A file matches when it contains **any** listed species with a count of at least one.
+- `/search/byfile` — runs inference on the submitted file and returns files whose tag set is a **superset** of the query file's tags. **The query file is never persisted.**
 
-Mọi truy vấn đều quét toàn bảng rồi lọc trong bộ nhớ. Đây là lựa chọn có chủ đích ở quy mô này (dưới vài nghìn bản ghi) và sẽ được ghi vào ADR kèm điều kiện kích hoạt việc chuyển sang chỉ mục.
+`/search/byfile` is served by `wildlens-search`, which does **not** load models itself. It invokes `wildlens-process` synchronously with `{"query_mode": true, "file_bytes": "<base64>", "ext": "jpg"}`; the processing Lambda returns `{"tags": {...}}` and writes nothing to DynamoDB, S3, or SNS. Only one function in the system carries the models.
+
+All queries scan the table and filter in memory. This is a deliberate choice at this scale (under a few thousand records) and is recorded as an ADR, together with the threshold at which a secondary index becomes warranted.
 
 ---
 
-## 6. Pipeline ML
+## 6. ML pipeline
 
-### 6.1 Hai tầng
+### 6.1 Two stages
 
-1. **MegaDetector v5a** — nhận cả tấm ảnh, trả về các khung bao kèm nhãn lớp: `1` = động vật, `2` = người, `3` = phương tiện. Chỉ xử lý lớp `1`, ngưỡng tin cậy ≥ 0.05.
-2. **SpeciesNet** — nhận từng khung đã cắt, phóng lên 600×600 rồi đưa về 480×480, **hoán vị sang bố cục kênh-cuối `(B,H,W,C)`**, trả về logit cho 46 lớp. Lấy lớp có xác suất cao nhất.
-3. **Ánh xạ nhãn** — `labels.txt` đổi tên khoa học (`Sus_scrofa`) sang tên thường (`wild boar`). Các cột dùng là 4, 5, 6 (chi, loài, tên thường).
+1. **MegaDetector v5a** takes the full frame and returns bounding boxes with a class: `1` animal, `2` person, `3` vehicle. Only class `1` is processed, at a confidence threshold of 0.05.
+2. **SpeciesNet** takes each crop, upscaled to 600×600 then resized to 480×480, **permuted to channels-last `(B,H,W,C)`**, and returns logits over 46 classes. The highest-probability class wins.
+3. **Label mapping** — `labels.txt` maps scientific names (`Sus_scrofa`) to common names (`wild boar`), using columns 4, 5 and 6 (genus, species, common name).
 
-Danh sách `CLASSES` gồm 46 phần tử; **thứ tự phải khớp với thứ tự đầu ra của mô hình** và không được sắp xếp lại.
+The `CLASSES` list holds 46 entries and **its order must match the model's output order**. It must never be sorted.
 
-### 6.2 Nạp mô hình
+### 6.2 Model loading
 
 ```
-Mặc định:   /opt/models/v1/{mdv5a.pt, model.pt, labels.txt}   ← nhúng trong ảnh container
-Ghi đè:     s3://wildlens-models-<hậu tố>/<MODEL_VERSION>/     ← khi MODEL_VERSION ≠ "v1"
+Default:   /opt/models/v1/{mdv5a.pt, model.pt, labels.txt}   ← baked into the image
+Override:  s3://wildlens-models-<suffix>/<MODEL_VERSION>/    ← when MODEL_VERSION != "v1"
 ```
 
-`model_loader.get_models(version)` trả về từ bộ nhớ đệm nếu đã nạp; nếu không thì nạp từ đĩa (mặc định) hoặc tải từ S3 (ghi đè). Bộ nhớ đệm có khoá là chuỗi phiên bản, nên một môi trường thực thi ấm có thể giữ nhiều phiên bản cùng lúc.
+`model_loader.get_models(version)` returns from an in-memory cache when warm; otherwise it loads from disk (default) or downloads from S3 (override). The cache is keyed by version string, so one warm execution environment can hold several versions at once.
 
-Việc này giữ lại khả năng đổi mô hình mà không sửa code (vặn biến môi trường, không build lại ảnh) đồng thời loại bỏ 470 MB tải về ở mỗi lần khởi động nguội.
+This preserves swapping models without a code change — set an environment variable, no image rebuild — while removing a 470 MB download from every cold start.
 
-### 6.3 Xử lý video
+### 6.3 Video
 
-Trích một khung mỗi giây, **tối đa 60 khung**. Gắn nhãn từng khung, cộng dồn số lượng theo loài. Ảnh thu nhỏ lấy từ khung đầu tiên. Video dài hơn 60 giây bị cắt bớt, và `frameCount` ghi lại số khung thực sự đã xử lý.
+Sample one frame per second, **capped at 60 frames**. Tag each frame and sum the per-species counts. The thumbnail comes from the first frame. Longer video is truncated, and `frameCount` records how many frames were actually processed.
 
-### 6.4 Chấm điểm độ chính xác
+### 6.4 Accuracy evaluation
 
-`ml/eval/run_eval.py` chạy pipeline trên 26 ảnh test, so với `ml/eval/answer_key.yaml`, xuất ra:
+`ml/eval/run_eval.py` runs the pipeline over the 26 test images, compares against `ml/eval/answer_key.yaml`, and emits:
 
-- Độ chính xác (precision), độ bao phủ (recall), điểm F1 cho từng loài
-- Ma trận nhầm lẫn giữa các loài
-- Sai lệch về số lượng cá thể (đếm thừa / đếm thiếu)
-- Thời gian xử lý trung bình mỗi ảnh
+- Per-species precision, recall and F1
+- A confusion matrix across species
+- Count error, over- and under-counting
+- Mean processing time per image
 
-Kết quả ghi vào `ml/eval/reports/<phiên bản>.md` và được commit. Khi đụng vào code ML, CI chạy lại và dán bảng so sánh vào bình luận Pull Request.
+Results are written to `ml/eval/reports/<version>.md` and committed. When ML code changes, CI reruns the harness and posts the comparison table as a pull-request comment.
 
-**Phép kiểm chuẩn:** `Sus_scrofa_1.JPG` phải ra đúng `{"wild boar": 1}`.
-
----
-
-## 7. Xử lý lỗi
-
-### 7.1 Phân loại lỗi
-
-| Loại | Ví dụ | Xử lý |
-|---|---|---|
-| **Tạm thời** | S3 quá tải, mạng chập, DynamoDB throttle | Ném lỗi → SQS thử lại (tối đa 3) |
-| **Vĩnh viễn** | File vỡ, định dạng không hỗ trợ, ảnh 0 byte | Ghi `FAILED` kèm `errorReason`, **xoá phiếu, không thử lại** |
-| **Quá sức** | Video quá dài | Cắt bớt ở 60 khung, coi là thành công, ghi `frameCount` |
-| **Trùng lặp** | Phiếu được giao hai lần | Bắt `ConditionalCheckFailedException`, log INFO, thoát êm |
-
-Phân biệt tạm thời với vĩnh viễn là điểm cốt lõi: thử lại một file vỡ ba lần là trả tiền ba lần cho một việc chắc chắn hỏng.
-
-### 7.2 Cấu hình hàng đợi
-
-| Tham số | Giá trị | Lý do |
-|---|---|---|
-| Thời gian ẩn phiếu | 5400 s | 6 × thời gian chạy tối đa của Lambda (900 s) |
-| `maxReceiveCount` | 3 | Ba lần thất bại là đủ để kết luận |
-| Giữ phiếu ở DLQ | 14 ngày | Tối đa SQS cho phép; đủ thời gian khám nghiệm |
-| Kích thước lô | 1 | Một file mỗi lần chạy; đơn giản hoá tính bất biến khi lặp |
-| Đồng thời dành riêng | 2 | Trần chi phí cứng |
-
-### 7.3 Cảnh báo
-
-| Cảnh báo | Ngưỡng | Hành động |
-|---|---|---|
-| DLQ có phiếu | `ApproximateNumberOfMessagesVisible >= 1` | Email → mở `runbook.md` |
-| Lambda lỗi | > 3 lỗi trong 5 phút | Email |
-| Bản ghi kẹt ở PENDING | > 10 bản ghi cũ hơn 15 phút | Email |
-| Ngân sách | $10 / $25 / $50 | Email từ AWS Budgets |
+**Canonical check:** `Sus_scrofa_1.JPG` must yield exactly `{"wild boar": 1}`.
 
 ---
 
-## 8. Khả năng quan sát
+## 7. Failure handling
 
-**Log có cấu trúc.** Mọi log là JSON một dòng, kèm `fileId` làm mã tương quan. Một câu truy vấn CloudWatch Logs Insights lần ra được toàn bộ hành trình của một file qua mọi Lambda.
+### 7.1 Error taxonomy
 
-**Truy vết phân tán.** Bật X-Ray trên API Gateway và tất cả Lambda. Các đoạn con được đánh dấu quanh: nạp mô hình, MegaDetector, SpeciesNet, tạo ảnh thu nhỏ, ghi DynamoDB. Nhờ đó trả lời được *"40 giây đó tiêu vào đâu"* mà không cần đoán.
+| Class | Example | Handling |
+|---|---|---|
+| **Transient** | S3 throttling, network blip, DynamoDB throttle | Raise, let SQS retry (up to 3) |
+| **Permanent** | Corrupt file, unsupported format, zero-byte image | Write `FAILED` with `errorReason`, **delete the message, do not retry** |
+| **Oversized** | Very long video | Truncate at 60 frames, treat as success, record `frameCount` |
+| **Duplicate** | Message delivered twice | Catch `ConditionalCheckFailedException`, log at INFO, exit cleanly |
 
-**Chỉ số tự định nghĩa** (giới hạn 4 để kiểm soát chi phí, khoảng $0.30/chỉ số/tháng):
+Separating transient from permanent is the core of this section: retrying a corrupt file three times pays three times for work that is certain to fail.
+
+### 7.2 Queue configuration
+
+| Setting | Value | Reason |
+|---|---|---|
+| Visibility timeout | 5400 s | 6 × the function's 900 s maximum runtime |
+| `maxReceiveCount` | 3 | Three failures is enough to conclude |
+| DLQ retention | 14 days | The SQS maximum; ample time to inspect |
+| Batch size | 1 | One file per invocation; simplifies idempotency |
+| Reserved concurrency | 2 | The hard spend ceiling |
+
+### 7.3 Alarms
+
+| Alarm | Threshold | Action |
+|---|---|---|
+| DLQ not empty | `ApproximateNumberOfMessagesVisible >= 1` | Email, then follow `docs/runbook.md` |
+| Function errors | More than 3 in 5 minutes | Email |
+| Records stuck PENDING | More than 10 older than 15 minutes | Email |
+| Budget | $10 / $25 / $50 | Email from AWS Budgets |
+
+---
+
+## 8. Observability
+
+**Structured logging.** Every log line is single-line JSON carrying `fileId` as the correlation ID. One CloudWatch Logs Insights query traces a file across every function.
+
+**Distributed tracing.** X-Ray enabled on API Gateway and all functions, with subsegments around model load, MegaDetector, SpeciesNet, thumbnail generation and the DynamoDB write. This answers "where did those forty seconds go" without guessing.
+
+**Custom metrics** — limited to four to control cost, at roughly $0.30 per metric per month:
 `ColdStartDuration`, `ModelLoadDuration`, `InferenceDuration`, `TagsPerFile`
 
-**Dashboard.** Một bảng điều khiển: số file xử lý được mỗi giờ, độ sâu hàng đợi, độ sâu DLQ, tỉ lệ lỗi, p50/p95/p99 thời gian xử lý, tỉ lệ khởi động nguội.
+**Dashboard.** One board: files processed per hour, queue depth, DLQ depth, error rate, p50/p95/p99 processing time, cold-start ratio.
 
-**Giữ log.** 14 ngày trên mọi log group, khai báo tường minh trong Terraform. Mặc định của CloudWatch là giữ vĩnh viễn, và đó là một khoản chi lặng lẽ tăng dần.
+**Log retention.** 14 days on every log group, declared explicitly in Terraform. The CloudWatch default is to retain forever, which is a quiet and growing cost.
 
 ---
 
-## 9. Bảo mật
+## 9. Security
 
-| Mối lo | Biện pháp |
+| Concern | Control |
 |---|---|
-| Truy cập API | Cognito Authorizer trên mọi route, không có ngoại lệ |
-| Truy cập của CI | OIDC với vai trò IAM tạm; **không lưu khoá truy cập AWS** |
-| Truy cập bucket | Chặn truy cập công khai trên cả bốn bucket. Mọi lượt đọc đi qua URL đã ký có hạn |
-| Quyền IAM | Một vai trò riêng cho mỗi Lambda, đúng quyền tối thiểu cần dùng. Không dùng vai trò dùng chung |
-| Bí mật | Không có. Giá trị cấu hình nằm trong biến môi trường Lambda |
-| Quét hạ tầng | `checkov` chạy trên mọi Pull Request |
-| Tài khoản gốc | Bật MFA, không dùng để làm việc. Mọi thao tác qua một người dùng IAM riêng |
+| API access | Cognito authoriser on every route, no exceptions |
+| CI access | OIDC federation with short-lived IAM roles; **no AWS access keys stored** |
+| Bucket access | Public access blocked on all four buckets. Every read goes through a time-limited signed URL |
+| IAM | A dedicated role per function, scoped to exactly what it uses. No shared role |
+| Secrets | None. Configuration lives in Lambda environment variables |
+| Infrastructure scanning | `checkov` on every pull request |
+| Root account | MFA enabled, never used for work. All operations through a dedicated IAM user |
 
-Bài tập gốc buộc mọi Lambda dùng chung một vai trò `LabRole` do ràng buộc của AWS Academy. Bản này dùng vai trò riêng cho từng Lambda — chính là điều người phỏng vấn muốn nghe, và cũng là nội dung một ADR.
+The original coursework required every Lambda to share a single `LabRole`, an AWS Academy constraint. This build uses a role per function — which is what an interviewer wants to hear, and is itself an ADR.
 
 ---
 
-## 10. Chiến lược kiểm thử
+## 10. Testing
 
-| Tầng | Kiểm cái gì | Chạy khi nào | Công cụ |
+| Layer | What it checks | When it runs | Tooling |
 |---|---|---|---|
-| Đơn vị | Tính vân tay, gộp nhãn, phân loại lỗi, tính kích thước ảnh nhỏ | Mọi commit | `pytest`, mô hình được giả lập |
-| Hạ tầng | Cú pháp Terraform, định dạng, lỗ hổng bảo mật | Mọi PR | `terraform validate`, `tflint`, `checkov` |
-| Tích hợp | Upload thật → chờ → nhãn đúng | Sau mỗi lần triển khai | `pytest` gọi API thật |
-| Độ chính xác ML | 26 ảnh test so với đáp án | Khi đụng code ML | `ml/eval/run_eval.py` |
+| Unit | Hashing, tag merging, error classification, thumbnail sizing | Every commit | `pytest` with models mocked |
+| Infrastructure | Terraform syntax, formatting, security findings | Every pull request | `terraform validate`, `tflint`, `checkov` |
+| Integration | Real upload, poll, assert the tags | After every deploy | `pytest` against the live API |
+| ML accuracy | 26 test images against the answer key | On ML changes | `ml/eval/run_eval.py` |
 
-Test đơn vị **không** được phụ thuộc vào file `.pt` thật. Mô hình được giả lập, giống cách `ml/test_tagger.py` của bài gốc làm, để CI chạy trong vài giây chứ không phải vài phút.
+Unit tests must **not** depend on the real `.pt` files. Models are mocked so that CI runs in seconds rather than minutes.
 
 ---
 
-## 11. Bố cục repo
+## 11. Repository layout
 
 ```
 wildlens/
-├── README.md                    (tiếng Anh — cho nhà tuyển dụng)
+├── README.md
 ├── docs/
 │   ├── architecture.md
-│   ├── adr/                     (tiếng Anh, 6 file)
+│   ├── adr/
 │   ├── runbook.md
-│   └── design/                  (tiếng Việt — tài liệu thiết kế)
+│   ├── design/
+│   └── diagrams/
 ├── infra/terraform/
 │   ├── envs/dev/
 │   ├── modules/{storage,auth,api,pipeline,notify,observability}/
 │   └── gcp/
 ├── services/
-│   ├── process/                 (Lambda container)
+│   ├── process/                 (container Lambda)
 │   ├── api/{upload,search,status,delete,subscribe}/
 │   └── gcp-resolve/
 ├── ml/
@@ -341,89 +343,87 @@ wildlens/
 └── .github/workflows/{ci.yml,deploy.yml,ml-eval.yml}
 ```
 
-`infra/` và `services/` tách nhau vì chúng thay đổi với nhịp khác nhau; CI chỉ chạy phần bị ảnh hưởng.
+`infra/` and `services/` are separate because they change on different cadences; CI runs only the parts a change affects.
 
-**Không bao giờ commit:** `*.pt`, `*.pth`, `*.tfstate`, `*.tfvars` chứa giá trị thật, bất cứ thứ gì có khoá truy cập.
-
----
-
-## 12. Kiểm soát chi phí
-
-| Cơ chế | Chặn cái gì |
-|---|---|
-| Cảnh báo ngân sách $10 / $25 / $50 | Biết trước khi muộn |
-| Đồng thời dành riêng = 2 | Vòng lặp lỗi không nhân bản được |
-| Giữ log 14 ngày | Log không tích tụ vô hạn |
-| Luật dọn ECR giữ 3 ảnh | Mỗi lần build là +4,5 GB |
-| Luật dọn S3 xoá sau 30 ngày | Ảnh test không nằm lại mãi |
-| Không dùng VPC | Tránh NAT Gateway $32/tháng |
-| `terraform destroy` | Xoá sạch khi nghỉ dài |
-
-**Chi phí dự kiến:** ~$0.75/tháng khi nghỉ, ~$3.30/tháng khi demo nhiều. $100 credit kéo được khoảng hai năm.
-
-**Kịch bản xấu nhất có trần:** 2 Lambda × 4 GB × 900 s chạy liên tục 8 tiếng ≈ $4.
+**Never committed:** `*.pt`, `*.pth`, `*.tfstate`, `*.tfvars` holding real values, anything containing access keys.
 
 ---
 
-## 13. Lộ trình triển khai
+## 12. Cost control
 
-Sắp xếp theo nguyên tắc: **cái gì gỡ lỗi khó thì làm sớm, và làm ở nơi dễ gỡ nhất.**
-
-### Mốc A — AI chạy được trên mây (~6 buổi)
-
-| GĐ | Nội dung |
+| Mechanism | What it prevents |
 |---|---|
-| 0 | Cài công cụ, người dùng IAM + MFA, khởi tạo repo, **bật cảnh báo ngân sách ngay** |
-| 1 | Terraform: các bucket S3 + DynamoDB. `apply` và `destroy` chạy sạch |
-| 2 | ML chạy trên máy: `tagger.py`, 26 ảnh test, bộ chấm điểm, test đơn vị |
-| 3 | Container + ECR + Lambda, **nạp mô hình từ S3**. Đo p95 khởi động nguội gốc |
+| Budget alarms at $10 / $25 / $50 | Finding out too late |
+| Reserved concurrency of 2 | A retry loop multiplying workers |
+| 14-day log retention | Logs accumulating indefinitely |
+| ECR lifecycle keeping three images | Each build adding 4.5 GB |
+| S3 lifecycle expiry at 30 days | Test uploads living forever |
+| No VPC | A $32/month NAT Gateway |
+| `terraform destroy` | Paying for an idle estate between sessions |
 
-Giai đoạn 3 cố tình dựng bản *chậm* trước. Không có con số "trước" thì không chứng minh được cải thiện ở giai đoạn 5.
+**Expected cost:** about $0.75/month idle, about $3.30/month while actively demonstrating. The $100 credit should last roughly two years.
 
-### Mốc B — Demo được đầu-cuối (~7 buổi) — đủ để đưa vào CV
-
-| GĐ | Nội dung |
-|---|---|
-| 4 | SQS + DLQ + sự kiện S3 + tính bất biến khi lặp + bốn trạng thái |
-| 5 | **Tối ưu:** nhúng mô hình vào ảnh container, đo lại, ghi lại mức cải thiện |
-| 6 | Cognito + API Gateway + các Lambda upload/search/status |
-| 7 | Giao diện + cơ chế hỏi lại trạng thái |
-
-### Mốc C — Trông như của kỹ sư thật (~3 buổi)
-
-| GĐ | Nội dung |
-|---|---|
-| 8 | SNS: đăng ký nhận email theo loài |
-| 9 | X-Ray, dashboard, cảnh báo, `runbook.md` |
-| 10 | GitHub Actions: CI, triển khai, OIDC, checkov |
-
-### Mốc D — Đầy đủ (~3,5 buổi)
-
-| GĐ | Nội dung |
-|---|---|
-| 11 | GCP Cloud Run xác minh JWT chéo đám mây, dựng bằng cùng Terraform |
-| 12 | Hỗ trợ video |
-| 13 | README, 6 ADR, sơ đồ kiến trúc, video demo |
-
-**Tổng: ~20 buổi (55–60 giờ).**
+**Bounded worst case:** two workers × 4 GB × 900 s running continuously for eight hours ≈ $4.
 
 ---
 
-## 14. Nguyên tắc làm việc
+## 13. Build plan
 
-Một giai đoạn chỉ được coi là xong khi trả lời được câu *"vì sao lại làm thế này?"* mà không cần nhìn lại ghi chú — không phải khi code vừa chạy được.
+Ordering principle: **whatever is hardest to debug is built earliest, in the environment where debugging is cheapest.**
 
-Lý do: một project trong CV mà không giải thích được khi phỏng vấn là một khoản nợ, không phải tài sản. Vì vậy mọi quyết định kiến trúc đều phải kèm lý do, và lý do đó được ghi thành ADR thay vì nằm trong trí nhớ.
+### Milestone A — Inference running in the cloud
+
+| Phase | Content |
+|---|---|
+| 0 | Toolchain, IAM user with MFA, repository, **budget alarms switched on first** |
+| 1 | Terraform for buckets and the table. `apply` and `destroy` both run clean |
+| 2 | ML proven locally: `tagger.py`, the 26-image test set, the evaluation harness, unit tests |
+| 3 | Container, ECR, Lambda, **loading models from S3**. Baseline p95 cold start measured |
+
+Phase 3 deliberately builds the *slow* version first. Without a "before" number, the Phase 5 improvement cannot be demonstrated.
+
+### Milestone B — Working end to end (viable stopping point)
+
+| Phase | Content |
+|---|---|
+| 4 | SQS, DLQ, S3 notification, idempotency, the four-state lifecycle |
+| 5 | **Optimisation:** bake models into the image, re-measure, record the delta |
+| 6 | Cognito, API Gateway, the upload/search/status functions |
+| 7 | Web client with status polling |
+
+### Milestone C — Operable, not merely working
+
+| Phase | Content |
+|---|---|
+| 8 | SNS tag subscriptions |
+| 9 | X-Ray, dashboard, alarms, `runbook.md` |
+| 10 | GitHub Actions: CI, deploy, OIDC, checkov |
+
+### Milestone D — Complete
+
+| Phase | Content |
+|---|---|
+| 11 | GCP Cloud Run cross-cloud JWT verification, provisioned from the same Terraform |
+| 12 | Video support |
+| 13 | README, six ADRs, architecture diagram, demo recording |
 
 ---
 
-## 15. Rủi ro đã biết
+## 14. Working principle
 
-| Rủi ro | Giảm thiểu |
+A phase is finished when the question *"why was it built this way?"* can be answered without consulting notes — not when the code first runs.
+
+A portfolio project that cannot be defended in an interview is a liability rather than an asset. Every architectural decision therefore carries its reasoning, and that reasoning is written into an ADR rather than left in memory.
+
+---
+
+## 15. Known risks
+
+| Risk | Mitigation |
 |---|---|
-| Ảnh container 4,5 GB làm CI chậm và tốn dung lượng | Tầng dựng có bộ nhớ đệm; luật dọn ECR; chỉ build khi `services/process/**` đổi |
-| Phần cứng Apple Silicon xây ảnh cho x86_64 | Luôn dùng `--platform linux/amd64`, khai báo trong Dockerfile |
-| Mô hình nhúng vào ảnh khiến layer rất lớn | Chấp nhận; giới hạn Lambda cho ảnh container là 10 GB |
-| GCP cần tài khoản riêng | Giai đoạn 11 nằm ở Mốc D; có thể bỏ mà project vẫn đứng vững |
-| Quét toàn bảng không mở rộng được | Có chủ đích ở quy mô này; ADR ghi rõ điều kiện chuyển sang chỉ mục |
-| Ước lượng 20 buổi có thể trượt | Mốc B là điểm dừng an toàn; C và D là phần cộng thêm |
+| A 4.5 GB image makes CI slow and storage-hungry | Cached build layers; ECR lifecycle policy; build only when `services/process/**` changes |
+| Apple Silicon host building for x86_64 | Always `--platform linux/amd64`, declared in the Dockerfile |
+| Baked models produce a very large image layer | Accepted; the Lambda container limit is 10 GB |
+| GCP requires a separate account | Phase 11 sits in Milestone D and can be dropped without weakening the project |
+| Table scans do not scale | Deliberate at this scale; the ADR records the threshold for moving to an index |
+| The build estimate may slip | Milestone B is a safe stopping point; C and D are additive |
