@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Interactive walkthrough of the WildLens serverless wildlife-tagging ingest pipeline on AWS.">
+<meta name="color-scheme" content="light dark">
+<title>WildLens Pipeline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,500;0,600;0,700;1,500&family=Source+Sans+3:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root{
+    --bg:#EDF1EE;
+    --surface:#FFFFFF;
+    --surface-2:#E1E9E4;
+    --ink:#121C18;
+    --ink-2:#44554C;
+    --muted:#77867E;
+    --line:#C6D2CB;
+    --line-2:#AEBEB5;
+    --accent:#136A55;
+    --accent-2:#1C8A6E;
+    --accent-soft:#D2E7DF;
+    --warn:#A94D19;
+    --warn-soft:#F2DFD0;
+    --shadow:0 1px 2px rgba(18,28,24,.06), 0 8px 24px -16px rgba(18,28,24,.28);
+    --r:10px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0C1310;
+      --surface:#141E19;
+      --surface-2:#1C2822;
+      --ink:#E3EDE7;
+      --ink-2:#A7B8AF;
+      --muted:#7B8C83;
+      --line:#2A3831;
+      --line-2:#3B4C43;
+      --accent:#54C5A4;
+      --accent-2:#6FD8B9;
+      --accent-soft:#12352C;
+      --warn:#E28A4F;
+      --warn-soft:#382516;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0C1310;
+    --surface:#141E19;
+    --surface-2:#1C2822;
+    --ink:#E3EDE7;
+    --ink-2:#A7B8AF;
+    --muted:#7B8C83;
+    --line:#2A3831;
+    --line-2:#3B4C43;
+    --accent:#54C5A4;
+    --accent-2:#6FD8B9;
+    --accent-soft:#12352C;
+    --warn:#E28A4F;
+    --warn-soft:#382516;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Source Sans 3", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:1060px;
+    margin-inline:auto;
+    padding-inline:16px;
+    padding-block:40px 72px;
+    display:flex;
+    flex-direction:column;
+    gap:56px;
+  }
+
+  h1,h2,h3{font-family:Spectral, Georgia, "Times New Roman", serif; font-weight:600; text-wrap:balance; margin:0; line-height:1.2}
+  h1{font-size:clamp(30px,5.2vw,46px); letter-spacing:-.015em}
+  h2{font-size:clamp(21px,3.2vw,28px)}
+  h3{font-size:17px}
+  p{margin:0}
+  code, .mono{font-family:"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.88em}
+  code{background:var(--surface-2); padding:.1em .38em; border-radius:4px}
+
+  .eyebrow{
+    font-family:"JetBrains Mono", ui-monospace, monospace;
+    font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--accent); font-weight:600;
+  }
+  .lede{color:var(--ink-2); font-size:17.5px; max-width:64ch}
+  .note{color:var(--muted); font-size:14.5px; max-width:72ch}
+
+  header.hero{display:flex; flex-direction:column; gap:14px}
+  .hero-meta{display:flex; flex-wrap:wrap; gap:8px; margin-top:4px}
+  .pill{
+    font-family:"JetBrains Mono", ui-monospace, monospace;
+    font-size:11.5px; padding:4px 10px; border-radius:999px;
+    background:var(--surface); border:1px solid var(--line); color:var(--ink-2);
+  }
+  .status{
+    display:inline-flex; align-items:center; gap:7px;
+    font-size:13px; color:var(--muted);
+    background:var(--surface); border:1px solid var(--line);
+    padding:7px 13px; border-radius:8px; align-self:flex-start;
+  }
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none}
+
+  section{display:flex; flex-direction:column; gap:18px}
+  .sec-head{display:flex; flex-direction:column; gap:8px}
+
+  .board{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    box-shadow:var(--shadow);
+    overflow:hidden;
+  }
+  .board-scroll{overflow-x:auto; padding:18px 16px 6px}
+  .board-scroll svg{display:block; min-width:640px; max-width:100%; height:auto; color:var(--ink-2)}
+
+  figure{margin:0; display:flex; flex-direction:column; gap:10px}
+  figcaption{color:var(--muted); font-size:14px; max-width:72ch}
+
+  .nlabel{font-family:"Source Sans 3", system-ui, sans-serif; font-size:13px; font-weight:600; fill:var(--ink)}
+  .nsub{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:10px; fill:var(--muted)}
+  .elabel{font-family:"Source Sans 3", system-ui, sans-serif; font-size:11px; fill:var(--muted)}
+
+  .node rect{fill:var(--surface-2); stroke:var(--line-2); stroke-width:1.2; transition:fill .28s, stroke .28s, stroke-width .28s}
+  .node.done rect{stroke:var(--accent); stroke-opacity:.5}
+  .node.on rect{fill:var(--accent-soft); stroke:var(--accent); stroke-width:2.2}
+  .node.on .nlabel{fill:var(--accent)}
+  .node.err.on rect{fill:var(--warn-soft); stroke:var(--warn)}
+  .node.err.on .nlabel{fill:var(--warn)}
+
+  .edge{fill:none; stroke:currentColor; stroke-opacity:.22; stroke-width:1.4; marker-end:url(#a-dim); transition:stroke .28s, stroke-opacity .28s, stroke-width .28s}
+  .edge.dash{stroke-dasharray:5 4}
+  .edge.done{stroke:var(--accent); stroke-opacity:.45; marker-end:url(#a-done)}
+  .edge.on{stroke:var(--accent); stroke-opacity:1; stroke-width:2.3; marker-end:url(#a-on)}
+  .edge.err.on{stroke:var(--warn); marker-end:url(#a-warn)}
+  .edge.on:not(.noflow){stroke-dasharray:7 5; animation:flow 1s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-24}}
+
+  .elabel{opacity:.55; transition:opacity .28s, fill .28s}
+  .elabel.on{opacity:1; fill:var(--accent); font-weight:600}
+  .elabel.err.on{fill:var(--warn)}
+
+  @media (prefers-reduced-motion: reduce){
+    .edge.on:not(.noflow){animation:none}
+    *{transition-duration:.01ms !important}
+  }
+
+  .player{display:flex; flex-direction:column; gap:14px; padding:16px; border-top:1px solid var(--line)}
+  .ctrls{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+  button{font:inherit; cursor:pointer; border-radius:7px; border:1px solid var(--line-2); background:var(--surface); color:var(--ink); padding:7px 13px; transition:background .15s, border-color .15s}
+  button:hover:not(:disabled){background:var(--surface-2); border-color:var(--accent)}
+  button:disabled{opacity:.38; cursor:default}
+  button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .btn-primary{background:var(--accent); color:#F4F8F6; border-color:var(--accent); font-weight:600}
+  :root[data-theme="dark"] .btn-primary{color:#07100D}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn-primary{color:#07100D}}
+  .btn-primary:hover:not(:disabled){background:var(--accent-2); border-color:var(--accent-2)}
+  .counter{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12.5px; color:var(--muted); margin-left:auto; font-variant-numeric:tabular-nums}
+
+  .rail{display:flex; flex-wrap:wrap; gap:5px}
+  .chip{
+    font-family:"JetBrains Mono", ui-monospace, monospace; font-size:11.5px;
+    width:30px; height:30px; padding:0; display:grid; place-items:center;
+    border-radius:6px; color:var(--muted);
+  }
+  .chip.seen{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
+  .chip[aria-current="true"]{background:var(--accent); color:#F4F8F6; border-color:var(--accent); font-weight:600}
+  :root[data-theme="dark"] .chip[aria-current="true"]{color:#07100D}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip[aria-current="true"]{color:#07100D}}
+  .chip.err{border-style:dashed}
+  .chip.err.seen{color:var(--warn); border-color:var(--warn); background:var(--warn-soft)}
+  .chip.err[aria-current="true"]{background:var(--warn); border-color:var(--warn); color:#FFF}
+
+  .caption{
+    background:var(--surface-2); border-radius:8px; padding:15px 17px;
+    display:flex; flex-direction:column; gap:7px; min-height:128px;
+    border-left:3px solid var(--accent);
+  }
+  .caption.err{border-left-color:var(--warn)}
+  .caption h3{font-family:"Source Sans 3", system-ui, sans-serif; font-weight:700; font-size:16.5px}
+  .caption p{color:var(--ink-2); font-size:15px; max-width:72ch}
+  .caption .why{color:var(--muted); font-size:13.5px; max-width:72ch}
+  .caption .why b{color:var(--ink-2); font-weight:600}
+
+  .legend{display:flex; flex-wrap:wrap; gap:14px 22px; padding:12px 16px; border-top:1px solid var(--line); font-size:13px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:7px}
+  .swatch{width:22px; height:0; border-top:2px solid currentColor; display:inline-block}
+  .sw-on{color:var(--accent)}
+  .sw-err{color:var(--warn)}
+  .sw-dash{border-top-style:dashed}
+
+  .grid3{display:grid; grid-template-columns:repeat(auto-fit, minmax(270px,1fr)); gap:16px}
+  .trap{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px; display:flex; flex-direction:column; gap:11px; box-shadow:var(--shadow)}
+  .trap svg{display:block; width:100%; height:auto; color:var(--ink-2)}
+  .trap h3{font-family:"Source Sans 3", system-ui, sans-serif; font-weight:700; font-size:15.5px}
+  .trap p{font-size:14px; color:var(--ink-2)}
+  .trap .fix{font-size:13.5px; color:var(--muted); border-top:1px dashed var(--line-2); padding-top:9px}
+  .trap .fix b{color:var(--accent); font-weight:600}
+
+  .tbl-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); background:var(--surface)}
+  table{border-collapse:collapse; width:100%; min-width:460px; font-size:14.5px}
+  th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--line)}
+  th{font-size:11.5px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); font-weight:600}
+  tbody tr:last-child td{border-bottom:0}
+  td.num{font-family:"JetBrains Mono", ui-monospace, monospace; font-variant-numeric:tabular-nums; text-align:right}
+  tr.total td{font-weight:700; background:var(--surface-2)}
+
+  .miles{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px}
+  .mile{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:15px; display:flex; flex-direction:column; gap:7px}
+  .mile.now{border-color:var(--accent); background:var(--accent-soft)}
+  .mile .tag{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:11px; color:var(--accent); font-weight:600; letter-spacing:.08em}
+  .mile h3{font-family:"Source Sans 3", system-ui, sans-serif; font-weight:700; font-size:15.5px}
+  .mile p{font-size:13.5px; color:var(--ink-2)}
+  .mile .hrs{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12px; color:var(--muted); margin-top:auto; padding-top:6px}
+
+  footer{border-top:1px solid var(--line); padding-top:22px; color:var(--muted); font-size:13.5px; max-width:78ch}
+</style>
+<style>
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+
+  <header class="hero">
+    <span class="eyebrow">Interactive walkthrough</span>
+    <h1>How one image travels through WildLens</h1>
+    <p class="lede">A camera-trap photo goes in. Thirteen steps later it is a database record tagged <code>{"wild boar": 1}</code>, a thumbnail in object storage, and an email to everyone subscribed to that species. Step through it below.</p>
+    <div class="hero-meta">
+      <span class="pill">AWS ap-southeast-2</span>
+      <span class="pill">Terraform</span>
+      <span class="pill">S3 · SQS · Lambda · DynamoDB · SNS</span>
+      <span class="pill">MegaDetector → SpeciesNet</span>
+    </div>
+    <span class="status"><i class="dot"></i> Design document — project in active development</span>
+  </header>
+
+  <!-- ============ MAIN FLOW ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">01 · Ingest path</span>
+      <h2>From upload button to tagged record</h2>
+      <p class="note">Highlighted boxes are the components doing work at the current step. Solid green is data moving now, faint grey is not yet reached, amber is the failure path.</p>
+    </div>
+
+    <div class="board">
+      <div class="board-scroll">
+        <figure>
+          <svg viewBox="0 0 1000 372" role="img" aria-label="WildLens data flow. The browser calls API Gateway, which authorises against Cognito and invokes the upload Lambda. That Lambda deduplicates, writes a PENDING record to DynamoDB and returns a presigned URL. The browser uploads directly to S3, which emits an event into an SQS queue. A container Lambda claims the message, runs two-stage inference, writes a thumbnail to S3, updates DynamoDB to DONE and publishes to SNS. Messages that fail three times land in a dead-letter queue.">
+            <defs>
+              <marker id="a-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="currentColor" fill-opacity=".3"/>
+              </marker>
+              <marker id="a-done" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--accent)" fill-opacity=".5"/>
+              </marker>
+              <marker id="a-on" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--accent)"/>
+              </marker>
+              <marker id="a-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/>
+              </marker>
+            </defs>
+
+            <path id="e-post"    class="edge" d="M138,102 H214"/>
+            <path id="e-auth"    class="edge" d="M338,102 H414"/>
+            <path id="e-ddb1"    class="edge" d="M538,102 H790 V182 H818"/>
+            <path id="e-presign" class="edge dash" d="M479,128 V146 H120 V130"/>
+            <path id="e-put"     class="edge" d="M40,128 V166"/>
+            <path id="e-s3evt"   class="edge" d="M138,194 H414"/>
+            <path id="e-deq"     class="edge" d="M538,194 H614"/>
+            <path id="e-aiddb"   class="edge" d="M738,206 H818"/>
+            <path id="e-thumb"   class="edge" d="M660,220 V288"/>
+            <path id="e-sns"     class="edge" d="M710,220 V262 H879 V288"/>
+            <path id="e-dlq"     class="edge err" d="M479,220 V288"/>
+            <path id="e-poll"    class="edge dash noflow" d="M840,168 V40 H100 V74"/>
+
+            <text id="l-post"    class="elabel" x="176" y="92"  text-anchor="middle">POST /upload</text>
+            <text id="l-auth"    class="elabel" x="376" y="92"  text-anchor="middle">verify JWT</text>
+            <text id="l-ddb1"    class="elabel" x="664" y="92"  text-anchor="middle">dedupe · write PENDING</text>
+            <text id="l-presign" class="elabel" x="300" y="142" text-anchor="middle">presigned URL · 5 min</text>
+            <text id="l-put"     class="elabel" x="50"  y="160" text-anchor="start">PUT bytes</text>
+            <text id="l-s3evt"   class="elabel" x="276" y="184" text-anchor="middle">ObjectCreated event</text>
+            <text id="l-deq"     class="elabel" x="576" y="184" text-anchor="middle">claim message</text>
+            <text id="l-aiddb"   class="elabel" x="812" y="230" text-anchor="end">update status</text>
+            <text id="l-thumb"   class="elabel" x="660" y="252" text-anchor="middle">≤ 300px</text>
+            <text id="l-sns"     class="elabel" x="800" y="256" text-anchor="middle">1 msg / species</text>
+            <text id="l-dlq"     class="elabel err" x="490" y="252" text-anchor="start">3 failures</text>
+            <text id="l-poll"    class="elabel" x="470" y="32"  text-anchor="middle">client polls GET /files/{sha} every 3s</text>
+
+            <g id="n-browser" class="node">
+              <rect x="20" y="76" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="79" y="100" text-anchor="middle">Browser</text>
+              <text class="nsub"   x="79" y="116" text-anchor="middle">SHA-256</text>
+            </g>
+            <g id="n-api" class="node">
+              <rect x="220" y="76" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="279" y="100" text-anchor="middle">API Gateway</text>
+              <text class="nsub"   x="279" y="116" text-anchor="middle">+ Cognito</text>
+            </g>
+            <g id="n-upload" class="node">
+              <rect x="420" y="76" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="479" y="100" text-anchor="middle">Lambda</text>
+              <text class="nsub"   x="479" y="116" text-anchor="middle">/upload</text>
+            </g>
+            <g id="n-s3raw" class="node">
+              <rect x="20" y="168" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="79" y="192" text-anchor="middle">S3 · raw</text>
+              <text class="nsub"   x="79" y="208" text-anchor="middle">sha.jpg</text>
+            </g>
+            <g id="n-sqs" class="node">
+              <rect x="420" y="168" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="479" y="192" text-anchor="middle">SQS</text>
+              <text class="nsub"   x="479" y="208" text-anchor="middle">ingest queue</text>
+            </g>
+            <g id="n-ai" class="node">
+              <rect x="620" y="168" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="679" y="192" text-anchor="middle">Lambda · ML</text>
+              <text class="nsub"   x="679" y="208" text-anchor="middle">4 GB · max 2</text>
+            </g>
+            <g id="n-ddb" class="node">
+              <rect x="820" y="168" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="879" y="192" text-anchor="middle">DynamoDB</text>
+              <text class="nsub"   x="879" y="208" text-anchor="middle">wildlens-files</text>
+            </g>
+            <g id="n-dlq" class="node err">
+              <rect x="420" y="290" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="479" y="314" text-anchor="middle">DLQ</text>
+              <text class="nsub"   x="479" y="330" text-anchor="middle">+ alarm</text>
+            </g>
+            <g id="n-thumb" class="node">
+              <rect x="620" y="290" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="679" y="314" text-anchor="middle">S3 · thumbs</text>
+              <text class="nsub"   x="679" y="330" text-anchor="middle">thumbnail</text>
+            </g>
+            <g id="n-sns" class="node">
+              <rect x="820" y="290" width="118" height="52" rx="7"/>
+              <text class="nlabel" x="879" y="314" text-anchor="middle">SNS</text>
+              <text class="nsub"   x="879" y="330" text-anchor="middle">email</text>
+            </g>
+          </svg>
+          <figcaption>Ten components, three bands: <b>intake</b> along the top, <b>processing</b> through the middle, <b>outputs</b> along the bottom. The SQS queue sits between S3 and the ML worker — that placement is the one structural change from the original coursework design.</figcaption>
+        </figure>
+      </div>
+
+      <div class="player">
+        <div class="ctrls">
+          <button id="prev" type="button">← Back</button>
+          <button id="next" type="button" class="btn-primary">Next step →</button>
+          <button id="play" type="button">▶ Auto-play</button>
+          <button id="reset" type="button">↺ Restart</button>
+          <span class="counter" id="counter">Step 1 / 13</span>
+        </div>
+        <div class="rail" id="rail" role="tablist" aria-label="Jump to step"></div>
+        <div class="caption" id="caption">
+          <h3 id="cap-title"></h3>
+          <p id="cap-body"></p>
+          <p class="why" id="cap-why"></p>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span><i class="swatch sw-on"></i> active this step</span>
+        <span><i class="swatch sw-on" style="opacity:.45"></i> already traversed</span>
+        <span><i class="swatch"></i> not yet reached</span>
+        <span><i class="swatch sw-dash"></i> response / poll</span>
+        <span><i class="swatch sw-err"></i> failure path</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WHY QUEUE ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">02 · Architecture decision</span>
+      <h2>Why a queue sits in the middle</h2>
+      <p class="note">This is the single structural departure from the original design, and it is not decoration. The figure draws the thing that actually changes: who decides how many 4 GB workers come into existence.</p>
+    </div>
+
+    <div class="board">
+      <div class="board-scroll">
+        <figure>
+          <svg viewBox="0 0 940 330" role="img" aria-label="Two architectures compared. On the left, S3 invokes Lambda directly, so a failure loop can spawn an unbounded number of 4 GB workers. On the right, S3 feeds an SQS queue that caps concurrency at two workers, and messages that fail three times land in a dead-letter queue.">
+            <defs>
+              <marker id="b-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/>
+              </marker>
+              <marker id="b-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--accent)"/>
+              </marker>
+            </defs>
+
+            <text x="0" y="18" class="nsub" style="font-size:11px; fill:var(--warn); font-weight:600">ORIGINAL — S3 INVOKES LAMBDA DIRECTLY</text>
+            <g class="node">
+              <rect x="0" y="52" width="112" height="46" rx="7"/>
+              <text class="nlabel" x="56" y="80" text-anchor="middle">S3</text>
+            </g>
+            <path d="M112,75 H196" fill="none" stroke="var(--warn)" stroke-width="1.6" marker-end="url(#b-warn)"/>
+            <path d="M112,75 H160 V32 H196" fill="none" stroke="var(--warn)" stroke-width="1.6" marker-end="url(#b-warn)"/>
+            <path d="M112,75 H160 V118 H196" fill="none" stroke="var(--warn)" stroke-width="1.6" marker-end="url(#b-warn)"/>
+            <path d="M112,75 H160 V161 H196" fill="none" stroke="var(--warn)" stroke-width="1.6" marker-end="url(#b-warn)"/>
+
+            <g>
+              <rect x="200" y="14" width="126" height="36" rx="6" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.3"/>
+              <text class="nlabel" x="263" y="37" text-anchor="middle">Lambda 4 GB</text>
+              <rect x="200" y="57" width="126" height="36" rx="6" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.3"/>
+              <text class="nlabel" x="263" y="80" text-anchor="middle">Lambda 4 GB</text>
+              <rect x="200" y="100" width="126" height="36" rx="6" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.3"/>
+              <text class="nlabel" x="263" y="123" text-anchor="middle">Lambda 4 GB</text>
+              <rect x="200" y="143" width="126" height="36" rx="6" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.3"/>
+              <text class="nlabel" x="263" y="166" text-anchor="middle">Lambda 4 GB</text>
+              <text class="nlabel" x="263" y="198" text-anchor="middle" style="fill:var(--warn)">… × N — no ceiling</text>
+            </g>
+            <text class="elabel" x="346" y="100" text-anchor="start" style="fill:var(--warn); font-weight:600">one retry loop</text>
+            <text class="elabel" x="346" y="116" text-anchor="start" style="fill:var(--warn); font-weight:600">= unbounded spend</text>
+
+            <line x1="470" y1="8" x2="470" y2="212" stroke="var(--line-2)" stroke-width="1" stroke-dasharray="4 5"/>
+
+            <text x="500" y="18" class="nsub" style="font-size:11px; fill:var(--accent); font-weight:600">WILDLENS — S3 → SQS → LAMBDA</text>
+            <g class="node">
+              <rect x="500" y="52" width="100" height="46" rx="7"/>
+              <text class="nlabel" x="550" y="80" text-anchor="middle">S3</text>
+            </g>
+            <path d="M600,75 H648" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#b-ok)"/>
+            <g>
+              <rect x="652" y="52" width="100" height="46" rx="7" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.6"/>
+              <text class="nlabel" x="702" y="72" text-anchor="middle" style="fill:var(--accent)">SQS</text>
+              <text class="nsub" x="702" y="88" text-anchor="middle">buffers</text>
+            </g>
+            <path d="M752,66 H800" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#b-ok)"/>
+            <path d="M752,84 H800" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#b-ok)"/>
+            <g>
+              <rect x="804" y="46" width="126" height="34" rx="6" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.3"/>
+              <text class="nlabel" x="867" y="68" text-anchor="middle">Lambda 4 GB</text>
+              <rect x="804" y="86" width="126" height="34" rx="6" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.3"/>
+              <text class="nlabel" x="867" y="108" text-anchor="middle">Lambda 4 GB</text>
+              <text class="nlabel" x="867" y="140" text-anchor="middle" style="fill:var(--accent)">hard cap: 2</text>
+            </g>
+            <path d="M702,98 V150" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#b-warn)"/>
+            <text class="elabel" x="712" y="128" text-anchor="start" style="fill:var(--warn)">3 failures</text>
+            <g>
+              <rect x="640" y="154" width="124" height="42" rx="7" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.4"/>
+              <text class="nlabel" x="702" y="172" text-anchor="middle" style="fill:var(--warn)">DLQ</text>
+              <text class="nsub" x="702" y="188" text-anchor="middle">held for inspection</text>
+            </g>
+
+            <line x1="0" y1="232" x2="940" y2="232" stroke="var(--line)" stroke-width="1"/>
+            <text class="elabel" x="0" y="256" text-anchor="start" style="font-size:12.5px; fill:var(--ink-2)">Worst realistic case — a retry loop running unnoticed for eight hours:</text>
+            <text class="nlabel" x="0" y="286" text-anchor="start" style="font-size:19px; fill:var(--warn); font-family:'JetBrains Mono', monospace">≈ $80</text>
+            <text class="elabel" x="96" y="286" text-anchor="start" style="font-size:12.5px">without the queue</text>
+            <text class="nlabel" x="300" y="286" text-anchor="start" style="font-size:19px; fill:var(--accent); font-family:'JetBrains Mono', monospace">≈ $4</text>
+            <text class="elabel" x="372" y="286" text-anchor="start" style="font-size:12.5px">with the queue, capped at 2</text>
+            <text class="elabel" x="0" y="314" text-anchor="start" style="font-size:12px; fill:var(--muted)">SQS and the DLQ both sit inside the perpetual one-million-request free tier — the brake itself costs nothing.</text>
+          </svg>
+          <figcaption>The two sides differ in exactly one respect: <b>who controls how many workers spawn</b>. Without the queue that decision belongs to S3, and S3 knows nothing about the budget.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STATE MACHINE ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">03 · Record lifecycle</span>
+      <h2>Four states, and a free garbage collector</h2>
+      <p class="note">The original wrote to the database only once processing finished, so for the three minutes in between the UI had nothing to render. Writing early and updating in place is what makes a progress indicator possible at all.</p>
+    </div>
+
+    <div class="board">
+      <div class="board-scroll">
+        <figure>
+          <svg viewBox="0 0 940 210" role="img" aria-label="State machine. PENDING is written by the upload Lambda with a one-hour time-to-live, moves to PROCESSING when the worker claims the message, then to DONE when tags are written and the TTL is removed, or to FAILED when retries are exhausted.">
+            <defs>
+              <marker id="c-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--accent)"/>
+              </marker>
+              <marker id="c-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/>
+              </marker>
+              <marker id="c-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,1 L9,5 L0,9 z" fill="currentColor" fill-opacity=".5"/>
+              </marker>
+            </defs>
+
+            <g>
+              <rect x="8" y="48" width="170" height="52" rx="8" fill="var(--surface-2)" stroke="var(--line-2)" stroke-width="1.3"/>
+              <text class="nlabel" x="93" y="72" text-anchor="middle" style="font-family:'JetBrains Mono',monospace">PENDING</text>
+              <text class="nsub" x="93" y="89" text-anchor="middle">written by /upload</text>
+            </g>
+            <path d="M178,74 H252" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#c-ok)"/>
+            <text class="elabel" x="215" y="64" text-anchor="middle" style="fill:var(--accent)">message claimed</text>
+
+            <g>
+              <rect x="256" y="48" width="180" height="52" rx="8" fill="var(--surface-2)" stroke="var(--line-2)" stroke-width="1.3"/>
+              <text class="nlabel" x="346" y="72" text-anchor="middle" style="font-family:'JetBrains Mono',monospace">PROCESSING</text>
+              <text class="nsub" x="346" y="89" text-anchor="middle">written by ML worker</text>
+            </g>
+            <path d="M436,74 H510" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#c-ok)"/>
+            <text class="elabel" x="473" y="64" text-anchor="middle" style="fill:var(--accent)">inference complete</text>
+
+            <g>
+              <rect x="514" y="48" width="170" height="52" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.8"/>
+              <text class="nlabel" x="599" y="72" text-anchor="middle" style="font-family:'JetBrains Mono',monospace; fill:var(--accent)">DONE</text>
+              <text class="nsub" x="599" y="89" text-anchor="middle">+ tags, TTL removed</text>
+            </g>
+
+            <path d="M346,100 V146 H510" fill="none" stroke="var(--warn)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#c-warn)"/>
+            <text class="elabel" x="420" y="140" text-anchor="middle" style="fill:var(--warn)">retries exhausted</text>
+            <g>
+              <rect x="514" y="124" width="170" height="46" rx="8" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.4"/>
+              <text class="nlabel" x="599" y="145" text-anchor="middle" style="font-family:'JetBrains Mono',monospace; fill:var(--warn)">FAILED</text>
+              <text class="nsub" x="599" y="161" text-anchor="middle">with errorReason</text>
+            </g>
+
+            <path d="M93,100 V178 H300" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-width="1.4" stroke-dasharray="4 4" marker-end="url(#c-dim)"/>
+            <text class="elabel" x="100" y="196" text-anchor="start">abandoned upload: a one-hour DynamoDB TTL reaps the row at no cost</text>
+
+            <line x1="712" y1="30" x2="712" y2="190" stroke="var(--line)" stroke-width="1"/>
+            <text class="elabel" x="734" y="52" text-anchor="start" style="font-size:12px; fill:var(--ink-2); font-weight:600">What the user sees</text>
+            <text class="elabel" x="734" y="76" text-anchor="start">⏳ Received, queued…</text>
+            <text class="elabel" x="734" y="98" text-anchor="start">🔍 Identifying species…</text>
+            <text class="elabel" x="734" y="120" text-anchor="start" style="fill:var(--accent)">✅ Found: 1 wild boar</text>
+            <text class="elabel" x="734" y="142" text-anchor="start" style="fill:var(--warn)">❌ Failed — [reason]</text>
+          </svg>
+          <figcaption>The right-hand column is what each state renders as in the UI. The dashed arrow is the cleanup mechanism: a <code>PENDING</code> row is born with a one-hour expiry, and that expiry is removed only when the work completes.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TRAPS ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">04 · Queue semantics</span>
+      <h2>Three things that bite first-time queue users</h2>
+      <p class="note">Each of these is handled explicitly in the Terraform and in the worker. They are listed here because the handling, not the queue itself, is the interesting part.</p>
+    </div>
+
+    <div class="grid3">
+
+      <article class="trap">
+        <figure>
+          <svg viewBox="0 0 340 150" role="img" aria-label="The queue delivers the same message twice; the second run is rejected by a conditional write against DynamoDB.">
+            <defs>
+              <marker id="t1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="currentColor" fill-opacity=".6"/></marker>
+              <marker id="t1w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/></marker>
+            </defs>
+            <rect x="4" y="46" width="76" height="44" rx="6" fill="var(--surface-2)" stroke="var(--line-2)" stroke-width="1.2"/>
+            <text class="nlabel" x="42" y="73" text-anchor="middle">SQS</text>
+
+            <path d="M80,60 H146" fill="none" stroke="currentColor" stroke-opacity=".6" stroke-width="1.5" marker-end="url(#t1)"/>
+            <path d="M80,78 H146" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#t1w)"/>
+            <text class="elabel" x="113" y="52" text-anchor="middle">delivery 1</text>
+            <text class="elabel" x="113" y="100" text-anchor="middle" style="fill:var(--warn)">delivery 2</text>
+
+            <rect x="150" y="46" width="80" height="44" rx="6" fill="var(--surface-2)" stroke="var(--line-2)" stroke-width="1.2"/>
+            <text class="nlabel" x="190" y="66" text-anchor="middle">Worker</text>
+            <text class="nsub" x="190" y="81" text-anchor="middle">ML</text>
+
+            <path d="M230,60 H262" fill="none" stroke="var(--accent)" stroke-width="1.6" marker-end="url(#t1)"/>
+            <path d="M230,78 H256" fill="none" stroke="var(--warn)" stroke-width="1.5"/>
+            <line x1="250" y1="70" x2="262" y2="86" stroke="var(--warn)" stroke-width="2"/>
+            <line x1="262" y1="70" x2="250" y2="86" stroke="var(--warn)" stroke-width="2"/>
+
+            <rect x="268" y="40" width="68" height="56" rx="6" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+            <text class="nlabel" x="302" y="62" text-anchor="middle" style="fill:var(--accent); font-size:11.5px">DynamoDB</text>
+            <text class="nsub" x="302" y="78" text-anchor="middle" style="font-size:8.5px">conditional write</text>
+            <text class="elabel" x="170" y="132" text-anchor="middle" style="font-size:10.5px">“write only if status &lt;&gt; DONE”</text>
+          </svg>
+        </figure>
+        <h3>① The same file processed twice</h3>
+        <p>Standard SQS guarantees <i>at-least-once</i> delivery, not exactly-once. Unguarded, a redelivery means running inference twice and emailing subscribers twice.</p>
+        <p class="fix"><b>Handled by:</b> a conditional write — <i>“only if this record is not already DONE”</i>. The second run catches <code>ConditionalCheckFailedException</code>, logs it, and exits successfully. The property is <b>idempotency</b>.</p>
+      </article>
+
+      <article class="trap">
+        <figure>
+          <svg viewBox="0 0 340 150" role="img" aria-label="The worker needs 900 seconds but the visibility timeout is 30 seconds, so the queue redelivers the message and spawns additional concurrent workers.">
+            <defs>
+              <marker id="t2w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/></marker>
+            </defs>
+            <text class="elabel" x="4" y="22" text-anchor="start" style="font-size:10.5px">Worker needs</text>
+            <rect x="4" y="30" width="300" height="20" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.2"/>
+            <text class="nsub" x="154" y="44" text-anchor="middle" style="fill:var(--accent); font-size:10px">up to 900 s</text>
+
+            <text class="elabel" x="4" y="76" text-anchor="start" style="font-size:10.5px">Message hidden for</text>
+            <rect x="4" y="84" width="34" height="20" rx="4" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.2"/>
+            <text class="nsub" x="21" y="98" text-anchor="middle" style="fill:var(--warn); font-size:9px">30 s</text>
+
+            <path d="M38,94 H74" fill="none" stroke="var(--warn)" stroke-width="1.5" marker-end="url(#t2w)"/>
+            <text class="elabel" x="80" y="98" text-anchor="start" style="fill:var(--warn); font-size:10.5px">queue assumes the worker died</text>
+            <path d="M38,104 V124 H74" fill="none" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#t2w)"/>
+            <text class="elabel" x="80" y="128" text-anchor="start" style="fill:var(--warn); font-size:10.5px">→ redeliver → redeliver → …</text>
+          </svg>
+        </figure>
+        <h3>② The hidden clock that fans out</h3>
+        <p>While a worker holds a message, SQS hides it for the <i>visibility timeout</i>. If that expires before the work finishes, the message is handed to another worker — exactly the runaway the queue was meant to prevent.</p>
+        <p class="fix"><b>Handled by:</b> visibility timeout ≥ <b>6 ×</b> the function timeout. A 900 s function gets 5400 s, set in Terraform with the reasoning in a comment.</p>
+      </article>
+
+      <article class="trap">
+        <figure>
+          <svg viewBox="0 0 340 150" role="img" aria-label="A poison message cycles between the queue and the worker three times before moving to the dead-letter queue, which raises an alarm.">
+            <defs>
+              <marker id="t3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--warn)"/></marker>
+            </defs>
+            <rect x="8" y="24" width="84" height="42" rx="6" fill="var(--surface-2)" stroke="var(--line-2)" stroke-width="1.2"/>
+            <text class="nlabel" x="50" y="50" text-anchor="middle">SQS</text>
+
+            <rect x="180" y="24" width="84" height="42" rx="6" fill="var(--surface-2)" stroke="var(--line-2)" stroke-width="1.2"/>
+            <text class="nlabel" x="222" y="50" text-anchor="middle">Worker</text>
+
+            <path d="M92,38 H174" fill="none" stroke="var(--warn)" stroke-width="1.5" marker-end="url(#t3)"/>
+            <path d="M180,58 H98" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#t3)"/>
+            <text class="elabel" x="133" y="32" text-anchor="middle" style="fill:var(--warn); font-size:10px">attempt</text>
+            <text class="elabel" x="133" y="76" text-anchor="middle" style="fill:var(--warn); font-size:10px">crash · × 3</text>
+
+            <path d="M50,66 V98" fill="none" stroke="var(--warn)" stroke-width="1.6" marker-end="url(#t3)"/>
+            <rect x="8" y="102" width="112" height="40" rx="6" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.4"/>
+            <text class="nlabel" x="64" y="127" text-anchor="middle" style="fill:var(--warn)">DLQ</text>
+
+            <path d="M120,122 H168" fill="none" stroke="var(--warn)" stroke-width="1.5" marker-end="url(#t3)"/>
+            <text class="elabel" x="176" y="118" text-anchor="start" style="font-size:10.5px">🔔 alarm → email</text>
+            <text class="elabel" x="176" y="134" text-anchor="start" style="font-size:10.5px">main queue stays clear</text>
+          </svg>
+        </figure>
+        <h3>③ One bad file blocks the queue</h3>
+        <p>A corrupt image crashes the worker. The message returns, is retried, crashes again — indefinitely, holding up everything behind it.</p>
+        <p class="fix"><b>Handled by:</b> a redrive policy at three attempts, plus a CloudWatch alarm on <i>DLQ depth ≥ 1</i>. <code>docs/runbook.md</code> documents the triage steps.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ============ COST ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">05 · Cost engineering</span>
+      <h2>Running this on a $100 credit</h2>
+      <p class="note">The interesting risk is not the running cost; it is the resources that bill by the hour whether or not anything happens.</p>
+    </div>
+
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr><th>Component</th><th style="text-align:right">Idle month</th><th style="text-align:right">Active month (~200 files)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ECR — 4.5 GB container image</td><td class="num">$0.45</td><td class="num">$0.45</td></tr>
+          <tr><td>S3 — originals, thumbnails, static site</td><td class="num">$0.10</td><td class="num">$0.30</td></tr>
+          <tr><td>Lambda — ML worker</td><td class="num">$0.00</td><td class="num">$2.00</td></tr>
+          <tr><td>DynamoDB — on-demand</td><td class="num">$0.00</td><td class="num">$0.05</td></tr>
+          <tr><td>SQS · DLQ · SNS · Cognito · API Gateway</td><td class="num">$0.00</td><td class="num">$0.00</td></tr>
+          <tr><td>CloudWatch — 14-day logs + X-Ray</td><td class="num">$0.20</td><td class="num">$0.50</td></tr>
+          <tr class="total"><td>Total per month</td><td class="num">$0.75</td><td class="num">$3.30</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><b>The $32/month trap, avoided deliberately:</b> a great deal of tutorial material puts Lambda inside a VPC because it sounds more secure. A VPC-attached Lambda that needs outbound internet requires a NAT Gateway — <b>$32 a month, billed hourly, whether or not it carries traffic</b>. Nothing here needs a VPC: every service the worker talks to is a public AWS endpoint already gated by IAM. That decision is recorded as an ADR.</p>
+    <p class="note"><b>Six guardrails:</b> budget alarms at $10 / $25 / $50 · reserved concurrency of 2 · 14-day log retention · ECR lifecycle policy keeping three images · S3 lifecycle expiry at 30 days · <code>terraform destroy</code> between working sessions.</p>
+  </section>
+
+  <!-- ============ MILESTONES ============ -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">06 · Build plan</span>
+      <h2>Four milestones, each a complete artefact</h2>
+      <p class="note">Ordering principle: whatever is hardest to debug gets built earliest, and in the environment where debugging is cheapest. Inference is proven on a laptop before it ever enters a container, because iterating on a 4.5 GB image costs twenty minutes a round trip.</p>
+    </div>
+
+    <div class="miles">
+      <article class="mile now">
+        <span class="tag">MILESTONE A</span>
+        <h3>Inference running in the cloud</h3>
+        <p>Toolchain, IAM user, budget alarms, Terraform for buckets and table, ML proven locally against the test set, container on ECR, baseline cold-start measured.</p>
+        <span class="hrs">Phases 0–3</span>
+      </article>
+      <article class="mile">
+        <span class="tag">MILESTONE B</span>
+        <h3>Working end to end</h3>
+        <p>Queue, DLQ, idempotency, four-state lifecycle, cold-start optimisation with before/after numbers, Cognito, REST API, web client with polling.</p>
+        <span class="hrs">Phases 4–7</span>
+      </article>
+      <article class="mile">
+        <span class="tag">MILESTONE C</span>
+        <h3>Operable, not just working</h3>
+        <p>Tag subscriptions over SNS, X-Ray tracing, dashboard, alarms, runbook, GitHub Actions with OIDC federation and infrastructure security scanning.</p>
+        <span class="hrs">Phases 8–10</span>
+      </article>
+      <article class="mile">
+        <span class="tag">MILESTONE D</span>
+        <h3>Complete</h3>
+        <p>Cross-cloud JWT verification on GCP provisioned from the same Terraform, video frame sampling, README, ADRs, architecture diagram, demo recording.</p>
+        <span class="hrs">Phases 11–13</span>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    <b>WildLens</b> — a solo rebuild of a serverless wildlife-tagging platform, with infrastructure as code, a cost-bounded ingest queue, and measured model accuracy. The problem domain originates from a four-person university group assignment; this is an independent rebuild with a different architecture. This page is a design document, not a live system.
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STEPS = [
+    { t:"The browser fingerprints the file",
+      b:"Before anything crosses the network, JavaScript reads the file and computes a SHA-256 digest — a 64-character string derived from the content itself.",
+      w:"Hashing client-side rather than server-side means that if the file is already stored, we find out <b>before</b> spending bandwidth on a 50 MB upload.",
+      n:["browser"], e:[] },
+
+    { t:"Request an upload grant",
+      b:"The client calls <code>POST /upload</code> with the digest and file extension, carrying the Cognito ID token in the <code>Authorization</code> header.",
+      w:"Note what is <b>not</b> sent: the file. This request only asks for permission.",
+      n:["browser","api"], e:["post"] },
+
+    { t:"The gateway verifies the token",
+      b:"API Gateway validates the JWT signature against Cognito's public keys. Forged or expired tokens are rejected here — the request never reaches any Lambda.",
+      w:"Authorisation lives at the <b>API tier</b>, not inside each function. One place to get right, and no route can be accidentally left open.",
+      n:["api","upload"], e:["auth"] },
+
+    { t:"Deduplicate, then write a PENDING record",
+      b:"The Lambda looks the digest up in DynamoDB. A hit returns <code>duplicate: true</code>. A miss writes a <code>PENDING</code> row immediately, carrying a one-hour TTL.",
+      w:"Writing early is what lets the UI show progress instead of a blank screen. The TTL covers the case where the user abandons the upload — <b>no cleanup code, no cost</b>.",
+      n:["upload","ddb"], e:["ddb1"] },
+
+    { t:"Return a five-minute presigned URL",
+      b:"The response carries a signed URL authorising exactly one object write, at exactly one key, for exactly five minutes. The uploader's email is signed into the object metadata.",
+      w:"Streaming the file through Lambda would mean paying per-second while it waits on 50 MB, against a hard payload limit. This way the function completes in about 100 ms.",
+      n:["upload","browser"], e:["presign"] },
+
+    { t:"The browser uploads straight to S3",
+      b:"The client PUTs the bytes directly to object storage using the signed URL. No server of ours sits in the data path.",
+      w:"The object key is the digest — <code>a3f9c2….jpg</code>. One value serves as storage key, primary key and deduplication token at once.",
+      n:["browser","s3raw"], e:["put"] },
+
+    { t:"The object lands and an event is enqueued",
+      b:"S3 emits an <i>ObjectCreated</i> event. Rather than invoking the worker directly, the event is delivered to an SQS queue.",
+      w:"<b>This is the structural change from the original design.</b> The queue is where the concurrency ceiling lives: at most two workers regardless of how many files arrive at once.",
+      n:["s3raw","sqs"], e:["s3evt"] },
+
+    { t:"A worker claims the message",
+      b:"An available worker takes the message off the queue and writes <code>PROCESSING</code>. From this moment the client's view changes to “Identifying species…”.",
+      w:"SQS hides the message while the worker holds it. That hiding window must exceed the function timeout by a wide margin, or the system fans itself out. See ② below.",
+      n:["sqs","ai","ddb"], e:["deq","aiddb"] },
+
+    { t:"Two-stage inference, then a thumbnail",
+      b:"MegaDetector locates every animal in the frame. Each detection is cropped, upscaled and passed to SpeciesNet for classification. The image is then resized so its longest side is at most 300px and stored.",
+      w:"Why two stages? Handed the full frame, a classifier sees an animal occupying perhaps 3% of the pixels and guesses badly. <b>Cropping first, then asking, is substantially more accurate.</b>",
+      n:["ai","thumb"], e:["thumb"] },
+
+    { t:"Write DONE and drop the TTL",
+      b:"Tags such as <code>{\"wild boar\": 1}</code> are written alongside <code>DONE</code>, the model version used, and per-stage timings in milliseconds. The TTL attribute is removed, making the row permanent.",
+      w:"The update carries the condition <i>“only if not already DONE”</i>. If the queue redelivered the message, the second write is rejected here rather than duplicating work. See ① below.",
+      n:["ai","ddb"], e:["aiddb"] },
+
+    { t:"Fan out notifications",
+      b:"For each species detected, the worker publishes one SNS message carrying a <code>tag</code> message attribute. Subscription filter policies route each message only to the subscribers who asked for that species.",
+      w:"The publisher <b>has no knowledge of its subscribers</b>. Adding a new subscriber requires no change on the publishing side — the point of the pub/sub boundary.",
+      n:["ai","sns"], e:["sns"] },
+
+    { t:"The client poll sees DONE",
+      b:"Since step 6 the browser has been calling <code>GET /files/{sha}</code> every three seconds. This call returns <code>DONE</code>, and the UI renders the thumbnail and tags.",
+      w:"The viewer always sees something happening. The original wrote to the database only at the end, leaving a blank screen for the full three-minute cold path.",
+      n:["ddb","browser"], e:["poll"] },
+
+    { t:"Failure path: three strikes, then the DLQ",
+      b:"If the worker fails — a corrupt image, an unsupported format, memory exhaustion — the message returns to the queue. After three attempts the redrive policy moves it to the dead-letter queue and an alarm fires.",
+      w:"The main queue keeps draining; one bad file cannot block the ones behind it, and the failed message is preserved for inspection rather than discarded. <b>This is the answer to “how does your system handle failure?”</b>",
+      n:["sqs","dlq"], e:["dlq"], err:true }
+  ];
+
+  var NODES = ["browser","api","upload","s3raw","sqs","ai","ddb","dlq","thumb","sns"];
+  var EDGES = ["post","auth","ddb1","presign","put","s3evt","deq","aiddb","thumb","sns","dlq","poll"];
+
+  var idx = 0, timer = null;
+  var $ = function(id){ return document.getElementById(id); };
+  var rail = $("rail"), counter = $("counter"), caption = $("caption");
+  var capTitle = $("cap-title"), capBody = $("cap-body"), capWhy = $("cap-why");
+  var prevBtn = $("prev"), nextBtn = $("next"), playBtn = $("play"), resetBtn = $("reset");
+
+  STEPS.forEach(function(s, i){
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip" + (s.err ? " err" : "");
+    b.textContent = String(i + 1);
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-label", "Step " + (i + 1) + ": " + s.t);
+    b.addEventListener("click", function(){ stop(); go(i); });
+    rail.appendChild(b);
+  });
+  var chips = rail.querySelectorAll(".chip");
+
+  function clear(){
+    NODES.forEach(function(n){
+      var el = $("n-" + n);
+      if (el) el.classList.remove("on", "done");
+    });
+    EDGES.forEach(function(e){
+      var el = $("e-" + e), lb = $("l-" + e);
+      if (el) el.classList.remove("on", "done");
+      if (lb) lb.classList.remove("on");
+    });
+  }
+
+  function go(i){
+    idx = Math.max(0, Math.min(STEPS.length - 1, i));
+    clear();
+
+    for (var k = 0; k < idx; k++){
+      STEPS[k].n.forEach(function(n){ var el = $("n-" + n); if (el) el.classList.add("done"); });
+      STEPS[k].e.forEach(function(e){ var el = $("e-" + e); if (el) el.classList.add("done"); });
+    }
+
+    var s = STEPS[idx];
+    s.n.forEach(function(n){ var el = $("n-" + n); if (el){ el.classList.remove("done"); el.classList.add("on"); } });
+    s.e.forEach(function(e){
+      var el = $("e-" + e), lb = $("l-" + e);
+      if (el){ el.classList.remove("done"); el.classList.add("on"); }
+      if (lb) lb.classList.add("on");
+    });
+
+    capTitle.textContent = (idx + 1) + ". " + s.t;
+    capBody.innerHTML = s.b;
+    capWhy.innerHTML = s.w;
+    caption.classList.toggle("err", !!s.err);
+    counter.textContent = "Step " + (idx + 1) + " / " + STEPS.length;
+
+    for (var j = 0; j < chips.length; j++){
+      chips[j].setAttribute("aria-current", j === idx ? "true" : "false");
+      chips[j].classList.toggle("seen", j < idx);
+    }
+
+    prevBtn.disabled = idx === 0;
+    nextBtn.disabled = idx === STEPS.length - 1;
+  }
+
+  function stop(){
+    if (timer){ clearInterval(timer); timer = null; }
+    playBtn.textContent = "▶ Auto-play";
+  }
+
+  function play(){
+    if (timer){ stop(); return; }
+    if (idx === STEPS.length - 1) go(0);
+    playBtn.textContent = "❚❚ Pause";
+    timer = setInterval(function(){
+      if (idx >= STEPS.length - 1){ stop(); return; }
+      go(idx + 1);
+    }, 3200);
+  }
+
+  prevBtn.addEventListener("click", function(){ stop(); go(idx - 1); });
+  nextBtn.addEventListener("click", function(){ stop(); go(idx + 1); });
+  playBtn.addEventListener("click", play);
+  resetBtn.addEventListener("click", function(){ stop(); go(0); });
+
+  document.addEventListener("keydown", function(ev){
+    if (ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) return;
+    if (ev.key === "ArrowRight"){ stop(); go(idx + 1); }
+    else if (ev.key === "ArrowLeft"){ stop(); go(idx - 1); }
+  });
+
+  go(0);
+})();
+</script>
+
+</body>
+</html>
