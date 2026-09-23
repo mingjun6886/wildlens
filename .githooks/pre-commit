@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Blocks four classes of mistake that are expensive to undo once pushed:
+# oversized model weights, credentials, Terraform state, and non-English text.
+#
+# .gitignore covers the first three only while nobody reaches for `git add -f`,
+# and covers the fourth not at all. This is the second layer.
+#
+# Enable with:  git config core.hooksPath .githooks
+# Bypass with:  git commit --no-verify   (deliberate, and it shows in the log)
+
+set -uo pipefail
+
+fail=0
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+say() { printf '  \033[31m%s\033[0m %s\n' "✗" "$1"; fail=1; }
+
+# 1. Model weights and Terraform state -------------------------------------
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    *.pt|*.pth|*.onnx|*.pb|*.h5)
+      say "$f — model weights are never committed" ;;
+    *.tfstate|*.tfstate.*)
+      say "$f — Terraform state can contain secrets and is never committed" ;;
+  esac
+done <<< "$staged"
+
+# 2. Anything over 5 MB ----------------------------------------------------
+# GitHub rejects files over 100 MB outright and warns above 50 MB. 5 MB is a
+# deliberately tighter limit: nothing this project commits should approach it.
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  size=$(wc -c < "$f" | tr -d ' ')
+  if [ "$size" -gt 5242880 ]; then
+    say "$f — $((size / 1048576)) MB exceeds the 5 MB limit"
+  fi
+done <<< "$staged"
+
+# 3. Credentials -----------------------------------------------------------
+# AKIA is a long-lived access key ID, ASIA a temporary one. Both are 20 chars.
+diff_added=$(git diff --cached -U0 | grep '^+' || true)
+
+if printf '%s' "$diff_added" | grep -qE '(AKIA|ASIA)[A-Z0-9]{16}'; then
+  say "an AWS access key ID appears in the staged diff"
+fi
+if printf '%s' "$diff_added" | grep -qiE 'aws_secret_access_key[[:space:]]*[=:]'; then
+  say "an AWS secret access key appears in the staged diff"
+fi
+if printf '%s' "$diff_added" | grep -qE 'BEGIN [A-Z ]*PRIVATE KEY'; then
+  say "a private key appears in the staged diff"
+fi
+
+# 4. Non-English text ------------------------------------------------------
+hookdir=$(dirname "$0")
+while IFS= read -r f; do
+  case "$f" in
+    *.md|*.html|*.py|*.tf|*.tfvars|*.yml|*.yaml|*.js|*.json|*.sh|*.txt) ;;
+    *) continue ;;
+  esac
+  [ -f "$f" ] || continue
+  if ! python3 "$hookdir/check_language.py" "$f"; then
+    say "$f — contains Vietnamese; this repository is English only"
+  fi
+done <<< "$staged"
+
+if [ "$fail" -ne 0 ]; then
+  printf '\n\033[31mCommit blocked.\033[0m Fix the above, or use --no-verify if you are certain.\n\n'
+  exit 1
+fi
+
+exit 0
