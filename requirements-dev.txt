@@ -1,0 +1,5 @@
+# Development tooling. Runtime dependencies live with each service.
+boto3==1.43.100
+pytest==9.1.1
+pytest-cov==7.1.0
+ruff==0.16.8
