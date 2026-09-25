@@ -1,0 +1,50 @@
+# ML runtime dependencies. Kept separate from requirements-dev.txt so that CI,
+# which only lints and runs mocked unit tests, never downloads two gigabytes of
+# PyTorch to do work that does not need it.
+#
+# These versions are what the local macOS arm64 environment resolved to. The
+# Lambda container targets linux/amd64 and will need its own resolution, but the
+# three constraints recorded below are properties of the packages, not of the
+# platform, and will apply there too.
+#
+# --- The protobuf standoff -------------------------------------------------
+#
+# ultralytics-yolov5 (pulled in by megadetector) caps protobuf at <=3.20.1.
+# Every onnx release from 1.13 onward floors it at >=3.20.2. The two constraints
+# cannot both be satisfied, and the gap is a single patch version.
+#
+# Resolution: take protobuf 3.20.3, the last of the 3.20 line. It satisfies
+# onnx's floor and exceeds yolov5's ceiling by two patch releases, which contain
+# bug fixes only. pip prints a dependency-conflict warning; the combination was
+# verified by loading model.pt and running inference, not by trusting the
+# resolver.
+#
+# onnx is held at 1.17.0 because 1.18 and later require protobuf 5.x or 6.x,
+# which cannot coexist with yolov5 at all.
+#
+# onnx2torch must be installed with --no-deps, or it drags onnx and protobuf
+# back to versions that break the balance:
+#
+#     pip install "protobuf==3.20.3" "onnx==1.17.0"
+#     pip install megadetector
+#     pip install --no-deps onnx2torch
+#
+# onnx2torch is required despite never being imported directly: model.pt
+# unpickles into a torch.fx GraphModule produced by that package's ONNX
+# conversion, so the class must be importable for torch.load to succeed.
+
+megadetector==10.0.25
+onnx==1.17.0
+onnx2torch==1.5.15
+protobuf==3.20.3
+torch==2.14.0
+torchvision==0.29.0
+
+# Pulled in transitively, pinned so the resolution is reproducible.
+numpy==2.4.6
+opencv-python==5.0.0.93
+pillow==12.3.0
+PyYAML==6.0.3
+scipy==1.17.1
+tqdm==4.70.1
+ultralytics-yolov5==0.1.1
