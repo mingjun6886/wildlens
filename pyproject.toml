@@ -14,6 +14,11 @@ target-version = "py311"
 select = ["E", "W", "F", "I", "B", "C4", "UP", "S", "T20"]
 ignore = ["E501"]  # line length is the formatter's concern, not the linter's
 
+[tool.ruff.lint.isort]
+# ml/ is copied flat into the Lambda image rather than installed as a package,
+# so "import tagger" is a first-party import even though it has no package path.
+known-first-party = ["tagger"]
+
 [tool.ruff.lint.per-file-ignores]
 # Tests may use assert (S101) and throwaway credentials in fixtures (S105/S106).
 "**/tests/**" = ["S101", "S105", "S106"]

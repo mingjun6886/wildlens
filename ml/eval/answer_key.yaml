@@ -1,0 +1,91 @@
+# Ground truth for the 26-image test set.
+#
+# Species come from the filename: the source dataset names each image after the
+# species it contains. Counts are not in the filename and were established by
+# viewing every image.
+#
+# Counting rule: an individual is counted when it is identifiable at normal
+# viewing scale. Animals that only become visible when zooming in are excluded,
+# because the key should describe what a good system ought to find, not what a
+# careful human can eventually locate.
+#
+# Note on "dingo": labels.txt maps both Canis_familiaris and Canis_dingo to the
+# common name "dingo", so either predicted class satisfies these entries. One of
+# the two images is plainly a collared domestic dog; the tag vocabulary has no
+# way to express that distinction, which is a property of the label set rather
+# than of the model.
+#
+# Every count was reviewed against the image. The two cattle frames are marked
+# CLOSE RANGE: the herd overlaps and extends past the frame edge, so those two
+# counts carry more uncertainty than the rest. Between them they contribute 8 of
+# the 32 individuals in this key, so cattle recall should be read with that in
+# mind rather than taken at face value.
+
+Alectura_lathami_1.JPG:
+  australian brushturkey: 1
+Alectura_lathami_2.JPG:
+  australian brushturkey: 1
+
+# CLOSE RANGE: a herd, partly overlapping and partly out of frame.
+Bos_taurus_1.JPG:
+  cattle: 4
+# CLOSE RANGE: the camera is close enough that only legs and flanks are visible.
+Bos_taurus_2.JPG:
+  cattle: 4
+
+Canis_familiaris_1.JPG:
+  dingo: 1
+Canis_familiaris_2.JPG:
+  dingo: 1
+
+Casuarius_casuarius_1.JPG:
+  southern cassowary: 1
+Casuarius_casuarius_2.JPG:
+  southern cassowary: 1
+
+Felis_catus_1.JPG:
+  domestic cat: 1
+Felis_catus_2.JPG:
+  domestic cat: 1
+
+Heteromyias_cinereifrons_1.JPG:
+  grey-headed robin: 1
+Heteromyias_cinereifrons_2.JPG:
+  grey-headed robin: 1
+
+Hypsiprymnodon_moschatus_1.JPG:
+  musky rat kangaroo: 1
+# One animal, close to the lens and partly out of frame. A smaller shape
+# further back was reviewed and is leaf litter, not a second individual.
+Hypsiprymnodon_moschatus_2.JPG:
+  musky rat kangaroo: 1
+
+Megapodius_reinwardt_1.JPG:
+  orange-footed scrubfowl: 1
+Megapodius_reinwardt_2.JPG:
+  orange-footed scrubfowl: 1
+
+Orthonyx_spaldingii_1.JPG:
+  northern chowchilla: 1
+Orthonyx_spaldingii_2.JPG:
+  northern chowchilla: 1
+
+Perameles_nasuta_1.JPG:
+  long-nosed bandicoot: 1
+Perameles_nasuta_2.JPG:
+  long-nosed bandicoot: 1
+
+Sus_scrofa_1.JPG:
+  wild boar: 1
+Sus_scrofa_2.JPG:
+  wild boar: 1
+
+Thylogale_stigmatica_1.JPG:
+  red-legged pademelon: 1
+Thylogale_stigmatica_2.JPG:
+  red-legged pademelon: 1
+
+Uromys_caudimaculatus_1.JPG:
+  giant white-tailed rat: 1
+Uromys_caudimaculatus_2.JPG:
+  giant white-tailed rat: 1
