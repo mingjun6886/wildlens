@@ -21,3 +21,8 @@ variable "raw_retention_days" {
   type        = number
   default     = 30
 }
+variable "account_id" {
+  description = "AWS account this environment belongs to. Terraform refuses to run anywhere else."
+  type        = string
+  default     = "895770859102"
+}

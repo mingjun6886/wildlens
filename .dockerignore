@@ -1,0 +1,36 @@
+# The build context is the repository root, because the image needs files from
+# both ml/ and services/. Without this file Docker would package the whole tree
+# and send it to the daemon — including .terraform, which holds roughly 800 MB
+# of provider binaries, and .venv, which holds another two gigabytes of PyTorch.
+#
+# Everything the image actually needs is listed in the Dockerfile's COPY lines.
+
+.git
+.github
+.venv
+venv
+
+# Terraform provider binaries and state
+**/.terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Local tooling and caches
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.DS_Store
+
+# Model weights are fetched from S3 at runtime, never baked in
+*.pt
+*.pth
+*.onnx
+
+# Not needed to run the tagger
+docs
+web
+infra
+ml/tests
+ml/eval

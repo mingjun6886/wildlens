@@ -23,20 +23,52 @@ logger = logging.getLogger(__name__)
 # them: the index of a name here is the index of its logit in the model output.
 # Never sort this list. Reordering it produces wrong labels with no error at all.
 CLASSES = [
-    "Alectura_lathami", "Antechinus_agilis", "Bos_taurus", "Burhinus_grallarius",
-    "Canis_familiaris", "Chalcophaps_longirostris", "Colluricincla_harmonica",
-    "Corcorax_melanorhamphos", "Dacelo_novaeguineae", "Dama_dama",
-    "Eopsaltria_australis", "Felis_catus", "Geopelia_humeralis",
-    "Gymnorhina_tibicen", "Homo_sapiens", "Isoodon_macrourus", "Lepus_europaeus",
-    "Macropus_giganteus", "Menura_novaehollandiae", "Mus_musculus",
-    "Oryctolagus_cuniculus", "Perameles_nasuta", "Pitta_versicolor", "Rattus",
-    "Rattus_fuscipes", "Rattus_rattus", "Strepera_graculina", "Sus_scrofa",
-    "Tachyglossus_aculeatus", "Thylogale_stigmatica", "Trichosurus_caninus",
-    "Trichosurus_cunninghami", "Trichosurus_vulpecula", "Varanus_varius",
-    "Vombatus_ursinus", "Vulpes_vulpes", "Wallabia_bicolor", "Canis_dingo",
-    "Capra_hircus", "Casuarius_casuarius", "Heteromyias_cinereifrons",
-    "Hypsiprymnodon_moschatus", "Megapodius_reinwardt", "Notamacropus_rufogriseus",
-    "Orthonyx_spaldingii", "Uromys_caudimaculatus",
+    "Alectura_lathami",
+    "Antechinus_agilis",
+    "Bos_taurus",
+    "Burhinus_grallarius",
+    "Canis_familiaris",
+    "Chalcophaps_longirostris",
+    "Colluricincla_harmonica",
+    "Corcorax_melanorhamphos",
+    "Dacelo_novaeguineae",
+    "Dama_dama",
+    "Eopsaltria_australis",
+    "Felis_catus",
+    "Geopelia_humeralis",
+    "Gymnorhina_tibicen",
+    "Homo_sapiens",
+    "Isoodon_macrourus",
+    "Lepus_europaeus",
+    "Macropus_giganteus",
+    "Menura_novaehollandiae",
+    "Mus_musculus",
+    "Oryctolagus_cuniculus",
+    "Perameles_nasuta",
+    "Pitta_versicolor",
+    "Rattus",
+    "Rattus_fuscipes",
+    "Rattus_rattus",
+    "Strepera_graculina",
+    "Sus_scrofa",
+    "Tachyglossus_aculeatus",
+    "Thylogale_stigmatica",
+    "Trichosurus_caninus",
+    "Trichosurus_cunninghami",
+    "Trichosurus_vulpecula",
+    "Varanus_varius",
+    "Vombatus_ursinus",
+    "Vulpes_vulpes",
+    "Wallabia_bicolor",
+    "Canis_dingo",
+    "Capra_hircus",
+    "Casuarius_casuarius",
+    "Heteromyias_cinereifrons",
+    "Hypsiprymnodon_moschatus",
+    "Megapodius_reinwardt",
+    "Notamacropus_rufogriseus",
+    "Orthonyx_spaldingii",
+    "Uromys_caudimaculatus",
 ]
 
 # MegaDetector emits three categories: 1 animal, 2 person, 3 vehicle.
@@ -158,7 +190,7 @@ def tag_images(
             crop = crop.resize((CROP_SIZE, CROP_SIZE), Image.BILINEAR)
 
             tensor = _transform(crop).unsqueeze(0)  # 1, C, H, W
-            tensor = tensor.permute(0, 2, 3, 1)     # 1, H, W, C — SpeciesNet wants channels last
+            tensor = tensor.permute(0, 2, 3, 1)  # 1, H, W, C — SpeciesNet wants channels last
             tensor = tensor.to(device)
 
             logits = species_model(tensor)

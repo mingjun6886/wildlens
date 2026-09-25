@@ -72,9 +72,7 @@ def patch_detector(monkeypatch, records):
 
 def test_load_label_map_reads_genus_species_and_common_name(tmp_path):
     path = tmp_path / "labels.txt"
-    path.write_text(
-        "uuid;mammalia;artiodactyla;suidae;sus;scrofa;wild boar\n", encoding="utf-8"
-    )
+    path.write_text("uuid;mammalia;artiodactyla;suidae;sus;scrofa;wild boar\n", encoding="utf-8")
     assert tagger.load_label_map(path) == {"Sus_scrofa": "wild boar"}
 
 
@@ -144,21 +142,15 @@ def test_ignores_people_and_vehicles(monkeypatch, image_file, label_map):
         ),
     )
 
-    result = tagger.tag_images(
-        [image_file], "md.pt", model, tagger.CLASSES, label_map
-    )
+    result = tagger.tag_images([image_file], "md.pt", model, tagger.CLASSES, label_map)
 
     assert result == {image_file: {"wild boar": 1}}
     assert model.calls == 1, "the classifier should only see the animal crop"
 
 
-def test_ignores_detections_below_the_confidence_threshold(
-    monkeypatch, image_file, label_map
-):
+def test_ignores_detections_below_the_confidence_threshold(monkeypatch, image_file, label_map):
     boar = tagger.CLASSES.index("Sus_scrofa")
-    patch_detector(
-        monkeypatch, detections(image_file, [animal(conf=0.9), animal(conf=0.01)])
-    )
+    patch_detector(monkeypatch, detections(image_file, [animal(conf=0.9), animal(conf=0.01)]))
 
     result = tagger.tag_images(
         [image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, label_map
@@ -172,11 +164,19 @@ def test_threshold_is_configurable(monkeypatch, image_file, label_map):
     patch_detector(monkeypatch, detections(image_file, [animal(conf=0.2)]))
 
     strict = tagger.tag_images(
-        [image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, label_map,
+        [image_file],
+        "md.pt",
+        FakeSpeciesModel(boar),
+        tagger.CLASSES,
+        label_map,
         conf_thresh=0.5,
     )
     lenient = tagger.tag_images(
-        [image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, label_map,
+        [image_file],
+        "md.pt",
+        FakeSpeciesModel(boar),
+        tagger.CLASSES,
+        label_map,
         conf_thresh=0.1,
     )
 
@@ -187,9 +187,7 @@ def test_threshold_is_configurable(monkeypatch, image_file, label_map):
 # --- edge cases ------------------------------------------------------------
 
 
-def test_an_image_with_no_detections_scores_an_empty_dict(
-    monkeypatch, image_file, label_map
-):
+def test_an_image_with_no_detections_scores_an_empty_dict(monkeypatch, image_file, label_map):
     """Empty is a valid result, not an error: the frame held no animals."""
     patch_detector(monkeypatch, detections(image_file, []))
 
@@ -209,9 +207,7 @@ def test_no_input_means_no_detector_run(monkeypatch, label_map):
     assert tagger.tag_images([], "md.pt", FakeSpeciesModel(0), tagger.CLASSES, label_map) == {}
 
 
-def test_an_unreadable_file_yields_no_tags_rather_than_crashing(
-    monkeypatch, tmp_path, label_map
-):
+def test_an_unreadable_file_yields_no_tags_rather_than_crashing(monkeypatch, tmp_path, label_map):
     """One corrupt file in a batch must not cost the other twenty-five."""
     broken = tmp_path / "broken.jpg"
     broken.write_bytes(b"not an image")
@@ -229,9 +225,7 @@ def test_an_unmapped_prediction_still_produces_a_tag(monkeypatch, image_file):
     boar = tagger.CLASSES.index("Sus_scrofa")
     patch_detector(monkeypatch, detections(image_file, [animal()]))
 
-    result = tagger.tag_images(
-        [image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, {}
-    )
+    result = tagger.tag_images([image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, {})
 
     assert result == {image_file: {"sus scrofa": 1}}
 

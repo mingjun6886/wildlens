@@ -1,6 +1,11 @@
 provider "aws" {
   region = var.region
 
+  # A misconfigured AWS_PROFILE is the one mistake that creates real resources
+  # in the wrong place and is expensive to notice. This turns that class of
+  # error into a refusal to start, naming both accounts in the message.
+  allowed_account_ids = [var.account_id]
+
   default_tags {
     tags = {
       Project     = var.project
@@ -36,4 +41,22 @@ module "database" {
   source = "../../modules/database"
 
   name_prefix = local.name_prefix
+}
+module "registry" {
+  source = "../../modules/registry"
+
+  name_prefix = local.name_prefix
+}
+
+module "compute" {
+  source = "../../modules/compute"
+
+  name_prefix          = local.name_prefix
+  image_repository_url = module.registry.repository_url
+
+  raw_bucket_arn     = module.storage.bucket_arns["raw"]
+  models_bucket_arn  = module.storage.bucket_arns["models"]
+  models_bucket_name = module.storage.bucket_names["models"]
+  thumb_bucket_arn   = module.storage.bucket_arns["thumb"]
+  thumb_bucket_name  = module.storage.bucket_names["thumb"]
 }
