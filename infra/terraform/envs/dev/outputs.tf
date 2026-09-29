@@ -13,3 +13,13 @@ output "process_log_group" {
   description = "Where the function writes its structured logs."
   value       = module.compute.log_group
 }
+
+output "ingest_queue_url" {
+  description = "Main queue. S3 publishes here, the process function consumes."
+  value       = module.queue.queue_url
+}
+
+output "dlq_url" {
+  description = "Dead-letter queue. Inspect this when the DLQ alarm fires."
+  value       = module.queue.dlq_url
+}

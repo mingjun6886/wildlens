@@ -81,3 +81,34 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "raw_bucket_name" {
+  description = "Name of the raw bucket, passed to the function as RAW_BUCKET."
+  type        = string
+}
+
+variable "queue_arn" {
+  description = "ARN of the ingest queue this function consumes."
+  type        = string
+}
+
+variable "table_arn" {
+  description = "ARN of the DynamoDB table results are written to."
+  type        = string
+}
+
+variable "table_name" {
+  description = "Name of that table, passed to the function as TABLE_NAME."
+  type        = string
+}
+
+variable "max_queue_concurrency" {
+  description = "Ceiling on concurrent invocations driven by the queue. Set on the event source mapping rather than the function, because a reservation needs 100 unreserved executions account-wide and a new account has 10 in total."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = var.max_queue_concurrency >= 2
+    error_message = "AWS requires a maximum_concurrency of at least 2 on an event source mapping."
+  }
+}

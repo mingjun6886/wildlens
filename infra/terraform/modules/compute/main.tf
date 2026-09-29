@@ -50,6 +50,35 @@ resource "aws_iam_role_policy" "process" {
         Resource = ["${var.thumb_bucket_arn}/*"]
       },
       {
+        # Claim and release queue messages. GetQueueAttributes is required by
+        # the event source mapping itself, not by the handler.
+        #
+        # Absent on purpose: sqs:SendMessage. This function consumes the queue
+        # and must never feed it, so a bug cannot build a loop that republishes
+        # its own work.
+        Sid    = "ConsumeIngestQueue"
+        Effect = "Allow"
+        Action = [
+          "sqs:ReceiveMessage",
+          "sqs:DeleteMessage",
+          "sqs:GetQueueAttributes",
+        ]
+        Resource = [var.queue_arn]
+      },
+      {
+        # GetItem and UpdateItem only. DeleteItem is withheld: deletion belongs
+        # to a separate function with its own role, and a tagging bug should not
+        # be able to remove records.
+        Sid    = "RecordResults"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+        ]
+        Resource = [var.table_arn]
+      },
+      {
         # Write to its own log group only. CreateLogGroup is deliberately
         # absent: Terraform creates the group below, and a function that cannot
         # create log groups cannot create one with no retention policy.
@@ -84,10 +113,10 @@ resource "aws_lambda_function" "process" {
   image_uri     = "${var.image_repository_url}:${var.image_tag}"
   architectures = ["x86_64"]
 
-  # Memory also buys CPU on Lambda: 4096 MB gives roughly two full cores, which
-  # is what keeps inference at a few seconds rather than a few minutes. Paying
-  # for more memory to finish sooner is often cheaper than paying for less
-  # memory for longer.
+  # Memory also buys CPU on Lambda: more memory means a larger share of a core,
+  # which is what keeps inference at seconds rather than minutes. Paying for
+  # more memory to finish sooner is often cheaper than paying for less memory
+  # for longer, because billing is per GB-second.
   memory_size = var.memory_mb
 
   # The cold path downloads 470 MB of weights before it can do any work.
@@ -103,6 +132,8 @@ resource "aws_lambda_function" "process" {
       MODEL_BUCKET  = var.models_bucket_name
       MODEL_VERSION = var.model_version
       THUMB_BUCKET  = var.thumb_bucket_name
+      RAW_BUCKET    = var.raw_bucket_name
+      TABLE_NAME    = var.table_name
     }
   }
 
@@ -113,4 +144,34 @@ resource "aws_lambda_function" "process" {
     aws_cloudwatch_log_group.process,
     aws_iam_role_policy.process,
   ]
+}
+
+# --- Queue consumer --------------------------------------------------------
+
+resource "aws_lambda_event_source_mapping" "ingest" {
+  event_source_arn = var.queue_arn
+  function_name    = aws_lambda_function.process.arn
+
+  # One message per invocation. Batching would amortise the poller's overhead,
+  # but each message here is a multi-second ML job, and a batch that fails part
+  # way through redelivers every message in it — including the ones that already
+  # succeeded. Idempotency would catch that, but not paying for it is simpler.
+  batch_size = 1
+
+  # The cost ceiling, set here rather than as reserved_concurrent_executions on
+  # the function.
+  #
+  # Two reasons. First, AWS refuses a reservation unless at least 100 unreserved
+  # executions remain account-wide, and a new account is capped at 10 in total,
+  # so the function-level setting is simply rejected. Second, and true whatever
+  # the quota: this bounds only the queue consumer, leaving headroom for direct
+  # invocations such as the search API's query mode in Phase 6.
+  scaling_config {
+    maximum_concurrency = var.max_queue_concurrency
+  }
+
+  # Report per-message failures instead of failing the whole batch. With a batch
+  # size of one this changes little today, but it is the setting that lets batch
+  # size grow later without redelivering successful work.
+  function_response_types = ["ReportBatchItemFailures"]
 }

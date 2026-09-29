@@ -17,3 +17,8 @@ output "log_group" {
   description = "CloudWatch log group name."
   value       = aws_cloudwatch_log_group.process.name
 }
+
+output "event_source_mapping_uuid" {
+  description = "Identifier of the queue consumer, useful when disabling it during an incident."
+  value       = aws_lambda_event_source_mapping.ingest.uuid
+}

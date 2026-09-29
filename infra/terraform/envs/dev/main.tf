@@ -48,6 +48,14 @@ module "registry" {
   name_prefix = local.name_prefix
 }
 
+module "queue" {
+  source = "../../modules/queue"
+
+  name_prefix     = local.name_prefix
+  raw_bucket_name = module.storage.bucket_names["raw"]
+  raw_bucket_arn  = module.storage.bucket_arns["raw"]
+}
+
 module "compute" {
   source = "../../modules/compute"
 
@@ -55,8 +63,13 @@ module "compute" {
   image_repository_url = module.registry.repository_url
 
   raw_bucket_arn     = module.storage.bucket_arns["raw"]
+  raw_bucket_name    = module.storage.bucket_names["raw"]
   models_bucket_arn  = module.storage.bucket_arns["models"]
   models_bucket_name = module.storage.bucket_names["models"]
   thumb_bucket_arn   = module.storage.bucket_arns["thumb"]
   thumb_bucket_name  = module.storage.bucket_names["thumb"]
+
+  queue_arn  = module.queue.queue_arn
+  table_arn  = module.database.table_arn
+  table_name = module.database.table_name
 }
