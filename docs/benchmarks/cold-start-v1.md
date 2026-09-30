@@ -1,5 +1,14 @@
 # Cold-start baseline — model v1, weights loaded from S3
 
+> **Correction, 2026-09-30.** The log excerpt under "Where the time goes" labels
+> `Loaded model in 25.61 seconds` as a cold-start figure. It is not: the cold
+> handlers measured here ran 17.1–19.4 s in total, so no step inside them took
+> 25.61 s. That line came from the first-ever invocation (regime 1, 39.6 s
+> handler). The mis-attribution propagated into the ranked target list at the
+> bottom of this page, which over-estimated the cold-start saving from caching
+> the detector by roughly ten times. `cold-start-v2.md` has the measured outcome
+> and the reasoning. The numbers in the results table are unaffected.
+
 Measured 2026-09-25 against `wildlens-dev-process` in `ap-southeast-2`, tagging
 `Sus_scrofa_1.JPG` (309 KB). This is the **before** figure. Phase 5 bakes the
 weights into the image and re-measures against it.
