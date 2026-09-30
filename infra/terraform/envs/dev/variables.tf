@@ -26,3 +26,13 @@ variable "account_id" {
   type        = string
   default     = "895770859102"
 }
+
+variable "web_callback_urls" {
+  description = <<-EOT
+    Origins allowed to complete a Cognito sign-in. Local development only until
+    Phase 7 adds the CloudFront distribution; appended to rather than replaced,
+    so that running the client locally keeps working afterwards.
+  EOT
+  type        = list(string)
+  default     = ["http://localhost:3000"]
+}

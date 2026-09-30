@@ -73,3 +73,15 @@ module "compute" {
   table_arn  = module.database.table_arn
   table_name = module.database.table_name
 }
+
+module "auth" {
+  source = "../../modules/auth"
+
+  name_prefix = local.name_prefix
+  suffix      = local.suffix
+
+  # Phase 7 appends the CloudFront URL here. The port must match Vite's
+  # strictPort setting exactly, or every sign-in fails with redirect_mismatch.
+  callback_urls = var.web_callback_urls
+  logout_urls   = var.web_callback_urls
+}
