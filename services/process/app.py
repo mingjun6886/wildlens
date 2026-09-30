@@ -226,7 +226,17 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             thumb_key = f"{file_id}{suffix}"
             thumb_path = TMP / f"thumb-{uuid.uuid4().hex}.jpg"
             make_thumbnail(local_path, thumb_path)
-            s3.upload_file(str(thumb_path), os.environ["THUMB_BUCKET"], thumb_key)
+            # ContentType is set explicitly because S3 does not infer it. Without
+            # it the object is served as binary/octet-stream, which a browser may
+            # still render by sniffing but will offer to download rather than
+            # display, and which gives the wrong type to anything that trusts the
+            # header. make_thumbnail always writes JPEG, whatever came in.
+            s3.upload_file(
+                str(thumb_path),
+                os.environ["THUMB_BUCKET"],
+                thumb_key,
+                ExtraArgs={"ContentType": "image/jpeg"},
+            )
             thumb_path.unlink(missing_ok=True)
         except PermanentFailure as failure:
             record_failure(file_id, correlation_id, str(failure))

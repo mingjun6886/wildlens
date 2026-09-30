@@ -43,3 +43,8 @@ output "cognito_jwks_url" {
   description = "Public signing keys. Phase 11's GCP function verifies tokens against these."
   value       = module.auth.jwks_url
 }
+
+output "api_invoke_url" {
+  description = "Base URL of the API. Append /files/{fileId} and so on."
+  value       = module.api.invoke_url
+}

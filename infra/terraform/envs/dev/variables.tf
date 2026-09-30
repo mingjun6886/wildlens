@@ -36,3 +36,14 @@ variable "web_callback_urls" {
   type        = list(string)
   default     = ["http://localhost:3000"]
 }
+
+variable "allowed_origin" {
+  description = <<-EOT
+    Single browser origin permitted by CORS, used by both the API module's
+    preflight replies and the handlers' own response headers. The two must agree:
+    configuring one and not the other fails in a way that looks like CORS was
+    never set up at all.
+  EOT
+  type        = string
+  default     = "http://localhost:3000"
+}

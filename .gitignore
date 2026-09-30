@@ -39,3 +39,8 @@ credentials
 *.vi.md
 /vi/
 docs/vi/
+
+# Lambda zips built by Terraform's archive_file provider. Regenerated on every
+# apply, so committing one only produces churn — and a stale copy in the tree is
+# worse than none, since it looks like the deployed artefact and is not.
+**/.build/

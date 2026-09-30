@@ -85,3 +85,44 @@ module "auth" {
   callback_urls = var.web_callback_urls
   logout_urls   = var.web_callback_urls
 }
+
+module "api_functions" {
+  source = "../../modules/api_functions"
+
+  name_prefix = local.name_prefix
+  source_dir  = "${path.root}/../../../../services/api"
+
+  table_arn  = module.database.table_arn
+  table_name = module.database.table_name
+
+  raw_bucket_arn    = module.storage.bucket_arns["raw"]
+  raw_bucket_name   = module.storage.bucket_names["raw"]
+  thumb_bucket_arn  = module.storage.bucket_arns["thumb"]
+  thumb_bucket_name = module.storage.bucket_names["thumb"]
+
+  allowed_origin = var.allowed_origin
+}
+
+module "api" {
+  source = "../../modules/api"
+
+  name_prefix           = local.name_prefix
+  cognito_user_pool_arn = module.auth.user_pool_arn
+  allowed_origin        = var.allowed_origin
+
+  # Paths first, routes second: two methods on one path must share a resource,
+  # and CORS is keyed off the paths so that sharing cannot produce a duplicate
+  # OPTIONS method.
+  resources = {
+    files = ["{fileId}"]
+  }
+
+  routes = {
+    status = {
+      http_method   = "GET"
+      resource_key  = "files/{fileId}"
+      invoke_arn    = module.api_functions.invoke_arns["status"]
+      function_name = module.api_functions.function_names["status"]
+    }
+  }
+}
