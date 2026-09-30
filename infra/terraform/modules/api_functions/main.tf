@@ -30,6 +30,36 @@ locals {
         },
       ]
     }
+
+    upload = {
+      handler     = "upload.handler"
+      description = "POST /upload - reserves a record and returns a presigned PUT."
+      statements = [
+        {
+          # GetItem to answer "have we seen this digest?", UpdateItem to reserve it.
+          #
+          # Absent on purpose: DeleteItem. A caller must not be able to remove a
+          # record by uploading, and the condition on the reservation already
+          # refuses to overwrite a DONE row.
+          Sid      = "ReserveARecord"
+          Effect   = "Allow"
+          Action   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+          Resource = [var.table_arn]
+        },
+        {
+          # PutObject on the raw bucket only, and only so that the presigned URL it
+          # signs is honoured: a presigned URL grants exactly what its signer held,
+          # never more.
+          #
+          # No GetObject here. This function never reads an upload, so a bug in it
+          # cannot be turned into a way to read the bucket.
+          Sid      = "SignTheUpload"
+          Effect   = "Allow"
+          Action   = ["s3:PutObject"]
+          Resource = ["${var.raw_bucket_arn}/*"]
+        },
+      ]
+    }
   }
 }
 

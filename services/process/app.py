@@ -53,6 +53,11 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
 # than accumulating; the attribute is removed on the transition to DONE.
 PENDING_TTL_SECONDS = 3600
 
+# A FAILED record is diagnostic data, not abandoned work, so it outlives a stalled
+# upload by a long way — but it still expires, because a permanent failure is not
+# worth keeping forever. See record_failure.
+FAILED_TTL_SECONDS = 7 * 24 * 3600
+
 
 class PermanentFailure(Exception):
     """A failure that retrying cannot fix.
@@ -87,6 +92,15 @@ def sha256_of(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _is_digest(value: str) -> bool:
+    """Does this string look like a SHA-256 hex digest?
+
+    Both halves matter. Length alone would accept 64 letters, and the character
+    check alone would accept a short hex name such as "cafe".
+    """
+    return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
 def claim(file_id: str, correlation_id: str) -> bool:
@@ -143,11 +157,26 @@ def record_success(file_id: str, correlation_id: str, **fields) -> None:
 
 
 def record_failure(file_id: str, correlation_id: str, reason: str) -> None:
+    """Mark the record FAILED, with an expiry chosen rather than inherited.
+
+    Until Phase 6 this left the ttl that claim() had set, so a failed upload
+    vanished after an hour and a client polling afterwards was told "not found"
+    instead of "failed". That was an accident of not touching the attribute, not a
+    decision.
+
+    Seven days: a failure is diagnostic data with a short useful life. Long enough
+    that someone can investigate on Monday, short enough that dead records do not
+    accumulate. What matters is that the number is chosen.
+    """
     table.update_item(
         Key={"fileId": file_id},
-        UpdateExpression="SET #s = :failed, errorReason = :reason",
-        ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={":failed": "FAILED", ":reason": reason[:500]},
+        UpdateExpression="SET #s = :failed, errorReason = :reason, #t = :ttl",
+        ExpressionAttributeNames={"#s": "status", "#t": "ttl"},
+        ExpressionAttributeValues={
+            ":failed": "FAILED",
+            ":reason": reason[:500],
+            ":ttl": Decimal(int(time.time()) + FAILED_TTL_SECONDS),
+        },
     )
     log_event("failed", correlation_id, fileId=file_id, errorReason=reason)
 
@@ -164,9 +193,10 @@ def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, 
     # swallows a failed open and returns no tags rather than raising, so an
     # unreadable file reaching here would be scored as "no animals present"
     # instead of failing - which is precisely why the check happens earlier.
-    # Now measures inference alone. Before Phase 5 this number also carried the
+    #
+    # The timing below measures inference alone. Before Phase 5 it also carried the
     # detector's deserialisation, because the tagger was handed a path and loaded
-    # it here, inside the timed section. That is why the old benchmark showed
+    # the weights inside this timed section. That is why the old benchmark showed
     # "inference" at 8 s warm when the real figure was closer to 7.
     started = time.time()
     tags = tag_image(str(path), detector, species_model, classes, label_map)
@@ -186,7 +216,9 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
         raise PermanentFailure(f"unsupported file type: {suffix or '(none)'}")
 
     local_path = TMP / f"src-{uuid.uuid4().hex}{suffix}"
-    head = s3.head_object(Bucket=bucket, Key=key)
+    # No head_object. It existed only to read the uploadedBy metadata, which the
+    # upload function now writes from a verified Cognito claim instead — so this is
+    # one fewer S3 call per invocation as well as one fewer thing to trust.
     s3.download_file(bucket, key, str(local_path))
 
     try:
@@ -204,10 +236,41 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             "claimed", correlation_id, fileId=file_id, bucket=bucket, key=key, coldStart=cold_start
         )
 
+        # The key is a claim; the digest is the fact. From Phase 6 the upload
+        # function names the object after the digest the client said it was
+        # sending, because the browser must know the key before it can upload.
+        #
+        # This comparison is a security control, not a tidiness check. Without it a
+        # client can compute the digest of file B, request an upload, and send the
+        # bytes of file A. The record stays keyed by the true digest, so B's record
+        # is unharmed — but the object at B's key now holds A's bytes, and B's
+        # fullUrl would serve them. Content substitution under another identifier.
+        #
+        # The failure is recorded against the *claimed* digest, not the computed
+        # one, because that is the row the client created and is polling. Recording
+        # it under the true digest instead — which the first version of this check
+        # did — leaves the caller's own record at PENDING until its hour runs out,
+        # so an honest client whose hashing is buggy is told "processing" for an
+        # hour rather than "your file did not match". That is the same defect the
+        # Phase 4 reordering fixed, arriving by a different route.
+        #
+        # Enforced only for keys that look like a digest, so a direct upload with a
+        # descriptive filename — `aws s3 cp`, and the pre-Phase-6 test path — still
+        # works.
+        claimed = Path(key).stem.lower()
+        if _is_digest(claimed) and claimed != file_id:
+            reason = (
+                f"content does not match the key it was stored under: "
+                f"key claims {claimed[:12]}..., content hashes to {file_id[:12]}..."
+            )
+            record_failure(claimed, correlation_id, reason)
+            raise PermanentFailure(reason)
+
         if not claim(file_id, correlation_id):
             return {"fileId": file_id, "skipped": "already DONE"}
 
         try:
+
             # Verify readability before spending anything on inference. PIL reads
             # only the header, so this costs microseconds and saves both a
             # multi-second inference run and a thumbnail step that would fail
@@ -249,8 +312,14 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             s3Key=key,
             thumbKey=thumb_key,
             tags={name: Decimal(count) for name, count in tags.items()},
-            # Set by the upload function from the Cognito email claim in Phase 6.
-            uploadedBy=head.get("Metadata", {}).get("uploadedby", "unknown"),
+            # uploadedBy is deliberately absent. The upload function wrote it onto
+            # the PENDING record from a Cognito claim, and this update must not
+            # overwrite it — which is exactly what it used to do, replacing a
+            # verified address with "unknown" read back from S3 object metadata.
+            #
+            # An object that arrived without going through the API (aws s3 cp, or a
+            # direct invocation) therefore has no uploadedBy at all, which is the
+            # honest answer: nobody authenticated for it.
             createdAt=Decimal(int(time.time())),
             modelVersion=artefact_version(),
             modelLoadMs=Decimal(model_load_ms),

@@ -114,7 +114,8 @@ module "api" {
   # and CORS is keyed off the paths so that sharing cannot produce a duplicate
   # OPTIONS method.
   resources = {
-    files = ["{fileId}"]
+    files  = ["{fileId}"]
+    upload = []
   }
 
   routes = {
@@ -123,6 +124,12 @@ module "api" {
       resource_key  = "files/{fileId}"
       invoke_arn    = module.api_functions.invoke_arns["status"]
       function_name = module.api_functions.function_names["status"]
+    }
+    upload = {
+      http_method   = "POST"
+      resource_key  = "upload"
+      invoke_arn    = module.api_functions.invoke_arns["upload"]
+      function_name = module.api_functions.function_names["upload"]
     }
   }
 }

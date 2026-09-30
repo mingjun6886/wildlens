@@ -11,7 +11,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Both names, because boto3 reads them differently: an explicitly configured
+# client takes region_name, while boto3.resource() with no argument falls back
+# to AWS_DEFAULT_REGION and raises NoRegionError without it. The Lambda runtime
+# sets both, which is why this only shows up locally.
 os.environ.setdefault("AWS_REGION", "ap-southeast-2")
+os.environ.setdefault("AWS_DEFAULT_REGION", "ap-southeast-2")
 os.environ.setdefault("TABLE_NAME", "test-table")
 os.environ.setdefault("RAW_BUCKET", "test-raw")
 os.environ.setdefault("THUMB_BUCKET", "test-thumb")
