@@ -101,6 +101,11 @@ module "api_functions" {
   thumb_bucket_name = module.storage.bucket_names["thumb"]
 
   allowed_origin = var.allowed_origin
+
+  # /search/byfile asks the tagging function to identify a sample without storing
+  # it. Only one function in the estate carries the models.
+  process_function_arn  = module.compute.function_arn
+  process_function_name = module.compute.function_name
 }
 
 module "api" {
@@ -116,6 +121,7 @@ module "api" {
   resources = {
     files  = ["{fileId}"]
     upload = []
+    search = ["tags", "species", "byfile"]
   }
 
   routes = {
@@ -130,6 +136,27 @@ module "api" {
       resource_key  = "upload"
       invoke_arn    = module.api_functions.invoke_arns["upload"]
       function_name = module.api_functions.function_names["upload"]
+    }
+
+    # One function, three routes. The dispatch is on event["resource"], so an
+    # undeclared path is refused by API Gateway and never reaches the handler.
+    search_tags = {
+      http_method   = "POST"
+      resource_key  = "search/tags"
+      invoke_arn    = module.api_functions.invoke_arns["search"]
+      function_name = module.api_functions.function_names["search"]
+    }
+    search_species = {
+      http_method   = "POST"
+      resource_key  = "search/species"
+      invoke_arn    = module.api_functions.invoke_arns["search"]
+      function_name = module.api_functions.function_names["search"]
+    }
+    search_byfile = {
+      http_method   = "POST"
+      resource_key  = "search/byfile"
+      invoke_arn    = module.api_functions.invoke_arns["search"]
+      function_name = module.api_functions.function_names["search"]
     }
   }
 }

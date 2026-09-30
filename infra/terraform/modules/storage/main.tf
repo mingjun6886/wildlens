@@ -1,9 +1,27 @@
 # Four buckets, described once as data rather than four times as code.
 # expire_days = 0 means "keep indefinitely".
+#
+# raw and thumb keep their objects, and that is a correction rather than a
+# default. Both originally expired after 30 days as a guard against test data
+# accumulating, which silently broke an invariant the API depends on: a DONE
+# record has no ttl and lives forever, so after 30 days /files/{fileId} would
+# still report DONE with tags and still hand back a thumbUrl and fullUrl — both
+# pointing at objects that no longer existed. The record outlived the data it
+# described, and nothing would have reported it until someone opened an old link.
+#
+# Two ways to restore the invariant: let objects live as long as records, or give
+# records a ttl matching the bucket. The first, because this is a portfolio
+# project that has to still work when somebody opens it in three months.
+#
+# The cost that guard was protecting against turns out not to exist. Uploads are
+# capped at 25 MB, identical files are deduplicated by digest before they are ever
+# sent, and a demo corpus of fifty photographs is about 150 MB — under half a cent
+# a month. Test churn is handled by `terraform destroy` between sessions, which
+# force_destroy below exists to make possible.
 locals {
   buckets = {
     raw    = { expire_days = var.raw_retention_days }
-    thumb  = { expire_days = var.raw_retention_days }
+    thumb  = { expire_days = var.thumb_retention_days }
     models = { expire_days = 0 }
     web    = { expire_days = 0 }
   }

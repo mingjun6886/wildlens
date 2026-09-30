@@ -21,6 +21,7 @@ os.environ.setdefault("TABLE_NAME", "test-table")
 os.environ.setdefault("RAW_BUCKET", "test-raw")
 os.environ.setdefault("THUMB_BUCKET", "test-thumb")
 os.environ.setdefault("ALLOWED_ORIGIN", "http://localhost:3000")
+os.environ.setdefault("PROCESS_FUNCTION", "test-process")
 
 # botocore builds a signer at client creation and wants credentials to exist, even
 # though no test here makes a network call.

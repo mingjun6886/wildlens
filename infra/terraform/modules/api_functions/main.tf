@@ -60,6 +60,42 @@ locals {
         },
       ]
     }
+
+    search = {
+      handler     = "search.handler"
+      description = "POST /search/{tags,species,byfile} - scan, filter in memory, sign URLs."
+      statements = [
+        {
+          # Scan, because the thing being searched is a map and DynamoDB cannot index
+          # into one. Recorded as an ADR with the threshold at which that stops being
+          # the right answer.
+          #
+          # Scan and nothing else: no GetItem, no write of any kind. A search cannot
+          # modify a record however badly it goes wrong.
+          Sid      = "ScanForMatches"
+          Effect   = "Allow"
+          Action   = ["dynamodb:Scan"]
+          Resource = [var.table_arn]
+        },
+        {
+          Sid      = "SignImageUrls"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject"]
+          Resource = ["${var.raw_bucket_arn}/*", "${var.thumb_bucket_arn}/*"]
+        },
+        {
+          # The only function allowed to invoke another, and only this one target.
+          #
+          # /search/byfile identifies a sample without storing it, and the models
+          # live in exactly one function. Loading them here instead would double the
+          # memory footprint and the cold-start cost of the estate.
+          Sid      = "AskTheTaggerToIdentifyASample"
+          Effect   = "Allow"
+          Action   = ["lambda:InvokeFunction"]
+          Resource = [var.process_function_arn]
+        },
+      ]
+    }
   }
 }
 
@@ -154,6 +190,11 @@ resource "aws_lambda_function" "function" {
       RAW_BUCKET     = var.raw_bucket_name
       THUMB_BUCKET   = var.thumb_bucket_name
       ALLOWED_ORIGIN = var.allowed_origin
+
+      # Read by search.py for query mode. Set for all three functions rather than
+      # per function, because a shared zip means a shared environment block and
+      # splitting it would buy nothing: a name is not a credential.
+      PROCESS_FUNCTION = var.process_function_name
     }
   }
 

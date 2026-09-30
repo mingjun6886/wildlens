@@ -17,9 +17,16 @@ variable "region" {
 }
 
 variable "raw_retention_days" {
-  description = "Days before uploaded originals expire. Keeps test data from accumulating."
+  description = <<-EOT
+    Days before uploaded originals expire. 0 keeps them, which is the default.
+
+    This was 30 as a guard against test data accumulating, and that quietly broke
+    the API: a DONE record never expires, so after 30 days it still reported tags
+    and still returned signed URLs to objects S3 had deleted. Test churn is handled
+    by `terraform destroy` between sessions instead.
+  EOT
   type        = number
-  default     = 30
+  default     = 0
 }
 variable "account_id" {
   description = "AWS account this environment belongs to. Terraform refuses to run anywhere else."

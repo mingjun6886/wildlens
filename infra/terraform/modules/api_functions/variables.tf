@@ -51,3 +51,13 @@ variable "memory_mb" {
   type        = number
   default     = 512
 }
+
+variable "process_function_arn" {
+  description = "The tagging function, invoked synchronously by /search/byfile."
+  type        = string
+}
+
+variable "process_function_name" {
+  description = "Same function, by name: what the Invoke call takes."
+  type        = string
+}
