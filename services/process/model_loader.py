@@ -2,8 +2,10 @@
 
 The Lambda keeps its execution environment alive between invocations, so module
 level state survives a warm call. That is the whole basis of the caching here:
-the first invocation pays roughly three minutes to download and deserialise
-470 MB, and every warm invocation afterwards pays nothing.
+the first invocation in an environment pays 8-10 s to fetch and deserialise
+470 MB, and every warm invocation afterwards pays nothing. The cost is therefore
+per environment, not per request — which is also the reason a cold start gained
+little from this cache while a warm call gained 23%.
 
 Loading from S3 rather than baking the weights into the image is what lets a
 model be swapped by changing one environment variable — no rebuild, no deploy.
@@ -15,6 +17,7 @@ swap-without-rebuild capability survives the optimisation.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -100,20 +103,43 @@ def get_models(s3_client, bucket: str, version: str) -> tuple:
         logger.info("Evicting cached version(s) %s before loading %s", sorted(_CACHE), version)
         _CACHE.clear()
 
+    # The three stages are timed separately because the aggregate cannot answer
+    # the question that decides whether to bake weights into the image. Baking
+    # removes `fetchMs` and nothing else: the detector is deserialised from a
+    # local file either way. A single "model load took 9 seconds" figure looks
+    # like a case for baking whatever the split actually is.
+    fetch_started = time.time()
     local_dir, source = artefact_dir(s3_client, bucket, version)
+    fetch_ms = int((time.time() - fetch_started) * 1000)
 
     # force_cpu skips a GPU probe that can only ever fail here, and pins the
     # device rather than leaving it to be discovered.
+    detector_started = time.time()
     detector = load_detector(str(local_dir / "mdv5a.pt"), force_cpu=True)
+    detector_ms = int((time.time() - detector_started) * 1000)
 
+    species_started = time.time()
     species_model = torch.load(
         local_dir / "model.pt",
         map_location="cpu",  # Lambda has no GPU
         weights_only=False,  # the checkpoint is a pickled module, not a state dict
     )
     species_model.eval()
-
     label_map = load_label_map(local_dir / "labels.txt")
+    species_ms = int((time.time() - species_started) * 1000)
+
+    logger.info(
+        json.dumps(
+            {
+                "msg": "model load breakdown",
+                "version": version,
+                "source": source,
+                "fetchMs": fetch_ms,
+                "detectorMs": detector_ms,
+                "speciesMs": species_ms,
+            }
+        )
+    )
 
     loaded = (detector, species_model, CLASSES, label_map)
     _CACHE[version] = loaded

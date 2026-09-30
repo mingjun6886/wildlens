@@ -103,26 +103,127 @@ platform's own log lines were the ones left uncorrelated.
 4. **The accuracy figure is unchanged** — byte-identical evaluation output except
    the timing line. Precision 0.821, recall 1.000, F1 0.901.
 
-## Should the weights be baked into the image?
+## Baking the weights into the image: built, measured, removed
 
-Cold is still 21.5 s, above the 15 s line the plan set for reconsidering this, so
-the case is open rather than closed:
+The open question above was answered by building it. The `models` layer went into
+the image at `/opt/models/v1`, positioned after the dependency install and before
+the application code so that a code-only deploy would not re-pull it.
 
-| | For | Against |
+### The split that decided it
+
+`get_models` was instrumented to time its three stages separately, because the
+aggregate could not answer the question — baking removes the fetch and nothing
+else.
+
+| Stage | From S3 | From the image | Removed by baking? |
+|---|---|---|---|
+| Fetch artefacts | **3.45 s** | 0 s | yes |
+| Deserialise the detector | 4.86 s | 4.86 s | no |
+| Load SpeciesNet and labels | 0.50 s | 0.85 s | no — slightly slower |
+| **Total** | **8.83 s** | **5.85 s** | |
+
+A single "model load takes 9 seconds" figure reads as a complete case for baking
+whatever the split is. It is 39% of the number.
+
+### The result, which went the other way
+
+| | Not baked | Baked | Change |
+|---|---|---|---|
+| First invocation after deploy | 24.0 s | **56.7 s** | **+32.7 s** |
+| Cold, p50 | 20.1 s | **18.2 s** | −1.9 s |
+| Model load, first read | 8.8 s | **42.1 s** | +33.3 s |
+| Model load, subsequent | 8.8 s | 5.9 s | −2.9 s |
+| Image, compressed | 1.04 GB | 1.57 GB | +458 MB |
+
+**The first read of the baked weights took 42.1 s — nearly five times what
+downloading the same bytes from S3 costs.** Lambda fetches container image blocks
+on demand over the network and caches them per worker, so a 470 MB file read from
+a cold image layer is slower than an S3 GET of the same file. Baking does not
+move the bytes closer; it moves them onto a lazier transport.
+
+Once the blocks are cached the saving appears, and it matches the measured fetch
+time: 8.8 s to 5.9 s.
+
+### Why it was removed
+
+Roughly **seventeen cold starts per deploy** would be needed to repay 32.7 s at
+1.9 s each. This system does not see that, and the first invocation after a
+deploy is the one a demo hits, because a demo follows a deploy.
+
+There is also something this measurement could **not** establish: a fresh worker
+could not be forced, so how often the 42.1 s is paid is unknown. Lambda caches
+image blocks per worker, so every new worker pays it again — on every scale-out,
+not once per deploy. An unmeasured cost that can only make the trade worse argues
+for not taking it.
+
+The instrumentation stayed. The Dockerfile and build-script changes were reverted,
+and the commit that added them is in the history if the trade ever changes — a
+larger cold-start volume, or provisioned concurrency, would flip it.
+
+### What the layer ordering was worth knowing anyway
+
+Two deploys of the **same 1.04 GB image** gave first-invocation times of 42.3 s
+and 24.0 s. The difference was how much of the image changed: the PyTorch layer in
+the first case, three small Python files in the second. Lambda re-pulls changed
+layers, not whole images.
+
+That is why the baked layer was positioned before the application code, and the
+positioning worked as intended. It was the wrong answer to a different question:
+layer ordering controls what a *deploy* costs, and the 42.1 s was paid by the
+first *read*, which no ordering avoids.
+
+### An unplanned result: the idempotency guard fired for real
+
+The invocation table showed two runs where the script issued one call:
+
+```
+20:20:50  billed  56.7s  mem 2294 MB   completed, wrote DONE
+20:21:01  billed   6.5s  mem  484 MB   "skipped: already DONE"
+```
+
+The likely cause is a client-side read timeout and retry while the first call was
+still running — at-least-once delivery arriving from the client side rather than
+from SQS. The duplicate returned in 6.5 s instead of paying 56.7 s again, and no
+second record was written.
+
+This was not a test. It is the first time the guard has been exercised by
+something other than a deliberate attempt to trigger it.
+
+## Where the remaining time is
+
+| Target | Cost | Status |
 |---|---|---|
-| Cold start | Removes the S3 fetch, part of the 8–9.6 s model load | |
-| Regime 1 | | Adds ~470 MB to a 1.04 GB image, lengthening the pull |
-| Frequency | Cold happens on every scale-up and after every idle period | Regime 1 happens once per deploy |
+| Deserialise the detector | **4.86 s** | Untouched. The largest single item |
+| Fetch from S3 | 3.45 s | Baking removes it and costs more elsewhere |
+| Inference | 5.9–7.5 s | Bounded by ~1.8 vCPU at 3008 MB |
+| Load SpeciesNet | 0.50 s | Not worth attention |
 
-The trade is a recurring saving against a one-off cost, which normally favours
-the recurring side. But the 8–9.6 s model load is **download plus
-deserialisation**, and only the download part goes away — the 268 MB detector
-still has to be deserialised from a local file either way. Without splitting
-that number, the expected saving is unknown.
+The detector deserialisation is now the biggest remaining item and is larger than
+the fetch that Phase 5 spent its effort on. `torch.load` on a pickled module is
+the slow path; TorchScript, or storing a `state_dict` and rebuilding the module,
+are the candidates. Both change how artefacts are produced, so they belong with
+the model-versioning work rather than here.
 
-**Next measurement, before any decision: instrument the two halves of
-`artefact_dir` and `load_detector` separately.** If the download is 2 s of the 9,
-baking is not worth a larger image.
+
+## Swapping the model version, verified
+
+With the weights coming from S3, `MODEL_VERSION` is the whole mechanism. A second
+prefix was populated by a server-side copy (`v2`, the same weights as `v1` — this
+tests the mechanism, not a different model), and the variable was changed with no
+rebuild and no code change:
+
+```
+{"msg": "model load breakdown", "version": "v2", "source": "s3",
+ "fetchMs": 3421, "detectorMs": 5777, "speciesMs": 380}
+Loading models from s3://wildlens-dev-models-5fmld4/v2/
+Loaded version v2 from s3 in 9.6s
+```
+
+The record written carries `modelVersion: v2`, so a result can be attributed to
+the model that produced it. This is the mechanism Phase 10 demonstrates; it is
+recorded here because the measurement above is what kept it intact — baking the
+weights in would have left this path unexercised for the version people actually
+run.
 
 ## Memory is no longer the pressing constraint
 

@@ -4,7 +4,17 @@
 # ml/tagger.py as well as the handlers here. Use ./scripts/build-and-push.sh.
 #
 # Model weights are NOT baked in: they are fetched from S3 at cold start so that
-# swapping a model needs no rebuild. Phase 5 revisits that trade-off.
+# swapping a model needs no rebuild.
+#
+# Phase 5 built the baked version, measured it, and removed it again. Baking
+# saved 1.9 s on a cold start and cost 32.7 s on the first invocation after a
+# deploy, because Lambda fetches image blocks on demand over the network: the
+# first read of 470 MB from a cold image layer took 42.1 s against 8.8 s to
+# download the same bytes from S3. Around seventeen cold starts per deploy would
+# be needed to break even, which this system does not see — and the first
+# invocation after a deploy is the one a demo hits. Numbers and the reasoning are
+# in docs/benchmarks/cold-start-v2.md; the commit that added it is in the history
+# if the trade ever changes.
 #
 # --------------------------------------------------------------------------
 # The install order below is not arbitrary. Every step exists because the
