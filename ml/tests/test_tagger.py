@@ -59,12 +59,36 @@ def animal(conf: float = 0.9, bbox=None) -> dict:
     return {"category": "1", "conf": conf, "bbox": bbox or [0.1, 0.1, 0.4, 0.4]}
 
 
-def detections(path: str, items: list[dict]) -> list[dict]:
-    return [{"file": path, "detections": items}]
+class FakeDetector:
+    """Stands in for MegaDetector's PTDetector.
+
+    Before Phase 5 these tests had to reach into the module and replace an
+    imported function, because `tag_images` fetched the detector itself and left
+    a test no way in. The detector is now an argument, so a test supplies one.
+
+    That is the difference between a test that lies to the code and a test that
+    talks to it, and the need for monkeypatch was a fact about the design rather
+    than about testing.
+    """
+
+    def __init__(self, per_path: dict[str, list[dict]]):
+        self.per_path = per_path
+        self.calls = 0
+
+    def generate_detections_one_image(self, _image, image_id, detection_threshold=0.005, **_):
+        self.calls += 1
+        # Mirrors the real return shape, verified against MegaDetector 10.0.21.
+        # `file` echoes image_id, which is why the caller passes the path.
+        return {
+            "file": image_id,
+            "detections": self.per_path.get(image_id, []),
+            "max_detection_conf": 0.0,
+        }
 
 
-def patch_detector(monkeypatch, records):
-    monkeypatch.setattr(tagger, "load_and_run_detector_batch", lambda **_: records)
+def detector_for(path: str, items: list[dict]) -> FakeDetector:
+    """A detector reporting `items` for `path` and nothing for any other path."""
+    return FakeDetector({path: items})
 
 
 # --- label parsing ---------------------------------------------------------
@@ -115,57 +139,53 @@ def test_to_tag_falls_back_to_a_lowercased_scientific_name(label_map):
 # --- detection filtering ---------------------------------------------------
 
 
-def test_counts_one_tag_per_animal_detection(monkeypatch, image_file, label_map):
+def test_counts_one_tag_per_animal_detection(image_file, label_map):
     boar = tagger.CLASSES.index("Sus_scrofa")
-    patch_detector(monkeypatch, detections(image_file, [animal(), animal(), animal()]))
+    detector = detector_for(image_file, [animal(), animal(), animal()])
 
     result = tagger.tag_images(
-        [image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, label_map
+        [image_file], detector, FakeSpeciesModel(boar), tagger.CLASSES, label_map
     )
 
     assert result == {image_file: {"wild boar": 3}}
 
 
-def test_ignores_people_and_vehicles(monkeypatch, image_file, label_map):
+def test_ignores_people_and_vehicles(image_file, label_map):
     """MegaDetector category 2 is a person and 3 a vehicle; neither is wildlife."""
     boar = tagger.CLASSES.index("Sus_scrofa")
     model = FakeSpeciesModel(boar)
-    patch_detector(
-        monkeypatch,
-        detections(
-            image_file,
-            [
-                animal(),
-                {"category": "2", "conf": 0.99, "bbox": [0.1, 0.1, 0.2, 0.2]},
-                {"category": "3", "conf": 0.99, "bbox": [0.5, 0.5, 0.2, 0.2]},
-            ],
-        ),
+    detector = detector_for(
+        image_file,
+        [
+            animal(),
+            {"category": "2", "conf": 0.99, "bbox": [0.1, 0.1, 0.2, 0.2]},
+            {"category": "3", "conf": 0.99, "bbox": [0.5, 0.5, 0.2, 0.2]},
+        ],
     )
 
-    result = tagger.tag_images([image_file], "md.pt", model, tagger.CLASSES, label_map)
+    result = tagger.tag_images([image_file], detector, model, tagger.CLASSES, label_map)
 
     assert result == {image_file: {"wild boar": 1}}
     assert model.calls == 1, "the classifier should only see the animal crop"
 
 
-def test_ignores_detections_below_the_confidence_threshold(monkeypatch, image_file, label_map):
+def test_ignores_detections_below_the_confidence_threshold(image_file, label_map):
     boar = tagger.CLASSES.index("Sus_scrofa")
-    patch_detector(monkeypatch, detections(image_file, [animal(conf=0.9), animal(conf=0.01)]))
+    detector = detector_for(image_file, [animal(conf=0.9), animal(conf=0.01)])
 
     result = tagger.tag_images(
-        [image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, label_map
+        [image_file], detector, FakeSpeciesModel(boar), tagger.CLASSES, label_map
     )
 
     assert result == {image_file: {"wild boar": 1}}
 
 
-def test_threshold_is_configurable(monkeypatch, image_file, label_map):
+def test_threshold_is_configurable(image_file, label_map):
     boar = tagger.CLASSES.index("Sus_scrofa")
-    patch_detector(monkeypatch, detections(image_file, [animal(conf=0.2)]))
 
     strict = tagger.tag_images(
         [image_file],
-        "md.pt",
+        detector_for(image_file, [animal(conf=0.2)]),
         FakeSpeciesModel(boar),
         tagger.CLASSES,
         label_map,
@@ -173,7 +193,7 @@ def test_threshold_is_configurable(monkeypatch, image_file, label_map):
     )
     lenient = tagger.tag_images(
         [image_file],
-        "md.pt",
+        detector_for(image_file, [animal(conf=0.2)]),
         FakeSpeciesModel(boar),
         tagger.CLASSES,
         label_map,
@@ -187,45 +207,48 @@ def test_threshold_is_configurable(monkeypatch, image_file, label_map):
 # --- edge cases ------------------------------------------------------------
 
 
-def test_an_image_with_no_detections_scores_an_empty_dict(monkeypatch, image_file, label_map):
+def test_an_image_with_no_detections_scores_an_empty_dict(image_file, label_map):
     """Empty is a valid result, not an error: the frame held no animals."""
-    patch_detector(monkeypatch, detections(image_file, []))
+    detector = detector_for(image_file, [])
 
     result = tagger.tag_images(
-        [image_file], "md.pt", FakeSpeciesModel(0), tagger.CLASSES, label_map
+        [image_file], detector, FakeSpeciesModel(0), tagger.CLASSES, label_map
     )
 
     assert result == {image_file: {}}
 
 
-def test_no_input_means_no_detector_run(monkeypatch, label_map):
-    def explode(**_):
-        raise AssertionError("the detector must not be loaded for an empty batch")
+def test_no_input_means_no_detector_run(label_map):
+    """An empty batch must not touch the detector at all.
 
-    monkeypatch.setattr(tagger, "load_and_run_detector_batch", explode)
+    Asserting on a call count says this directly. The earlier version installed a
+    function that raised, which tested the same thing by arranging a crash.
+    """
+    detector = FakeDetector({})
 
-    assert tagger.tag_images([], "md.pt", FakeSpeciesModel(0), tagger.CLASSES, label_map) == {}
+    assert tagger.tag_images([], detector, FakeSpeciesModel(0), tagger.CLASSES, label_map) == {}
+    assert detector.calls == 0
 
 
 def test_an_unreadable_file_yields_no_tags_rather_than_crashing(monkeypatch, tmp_path, label_map):
     """One corrupt file in a batch must not cost the other twenty-five."""
     broken = tmp_path / "broken.jpg"
     broken.write_bytes(b"not an image")
-    patch_detector(monkeypatch, detections(str(broken), [animal()]))
+    detector = detector_for(str(broken), [animal()])
 
     result = tagger.tag_images(
-        [str(broken)], "md.pt", FakeSpeciesModel(0), tagger.CLASSES, label_map
+        [str(broken)], detector, FakeSpeciesModel(0), tagger.CLASSES, label_map
     )
 
     assert result == {str(broken): {}}
 
 
-def test_an_unmapped_prediction_still_produces_a_tag(monkeypatch, image_file):
+def test_an_unmapped_prediction_still_produces_a_tag(image_file):
     """With an empty label map every name falls through to the lowercase form."""
     boar = tagger.CLASSES.index("Sus_scrofa")
-    patch_detector(monkeypatch, detections(image_file, [animal()]))
+    detector = detector_for(image_file, [animal()])
 
-    result = tagger.tag_images([image_file], "md.pt", FakeSpeciesModel(boar), tagger.CLASSES, {})
+    result = tagger.tag_images([image_file], detector, FakeSpeciesModel(boar), tagger.CLASSES, {})
 
     assert result == {image_file: {"sus scrofa": 1}}
 
@@ -233,10 +256,10 @@ def test_an_unmapped_prediction_still_produces_a_tag(monkeypatch, image_file):
 # --- the single-image wrapper ----------------------------------------------
 
 
-def test_tag_image_unwraps_the_batch_result(monkeypatch, image_file, label_map):
+def test_tag_image_unwraps_the_batch_result(image_file, label_map):
     cat = tagger.CLASSES.index("Felis_catus")
-    patch_detector(monkeypatch, detections(image_file, [animal(), animal()]))
+    detector = detector_for(image_file, [animal(), animal()])
 
     assert tagger.tag_image(
-        image_file, "md.pt", FakeSpeciesModel(cat), tagger.CLASSES, label_map
+        image_file, detector, FakeSpeciesModel(cat), tagger.CLASSES, label_map
     ) == {"domestic cat": 2}

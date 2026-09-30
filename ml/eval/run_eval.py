@@ -23,6 +23,7 @@ from pathlib import Path
 
 import torch
 import yaml
+from megadetector.detection.run_detector import load_detector
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import tagger  # noqa: E402
@@ -88,10 +89,17 @@ def metrics(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
 
 
 def load_models():
+    """Load both models once, for the whole run.
+
+    force_cpu keeps this comparable with Lambda, which has no accelerator. Left
+    to itself the detector would pick Metal on this machine and the per-image
+    timings printed below would not describe the deployed system at all.
+    """
+    detector = load_detector(str(MODELS / "mdv5a.pt"), force_cpu=True)
     species_model = torch.load(MODELS / "model.pt", map_location="cpu", weights_only=False)
     species_model.eval()
     label_map = tagger.load_label_map(REPO / "ml" / "labels.txt")
-    return species_model, label_map
+    return detector, species_model, label_map
 
 
 def write_report(totals, per_species, elapsed, image_count, path: Path) -> None:
@@ -133,11 +141,13 @@ def main() -> int:
     )
     image_paths = [str(IMAGES / name) for name in sorted(answer_key)]
 
-    species_model, label_map = load_models()
+    detector, species_model, label_map = load_models()
 
+    # Timed after loading, so the mean-per-image figure in the report is
+    # inference and not amortised model loading.
     started = time.time()
     tagged = tagger.tag_images(
-        image_paths, str(MODELS / "mdv5a.pt"), species_model, tagger.CLASSES, label_map
+        image_paths, detector, species_model, tagger.CLASSES, label_map
     )
     elapsed = time.time() - started
 

@@ -1,9 +1,15 @@
 """Two-stage wildlife tagger: MegaDetector locates animals, SpeciesNet names them.
 
 Imported both by the local evaluation harness and, from Phase 3 onward, by the
-Lambda handler. It owns no model-loading policy of its own: callers pass in an
-already-loaded SpeciesNet model and a path to the MegaDetector weights, so the
-Lambda can cache both across warm invocations.
+Lambda handler. It owns no model-loading policy of its own: callers pass in both
+models already loaded, so the Lambda can cache them across warm invocations.
+
+Phase 5 changed the second argument from a path to a loaded detector. Passing a
+path meant MegaDetector deserialised 268 MB of weights on every call, which cost
+about a second warm and about twenty-five when the file had just been written to
+/tmp — measured in docs/benchmarks/cold-start-v1.md. A path is cheap to cache
+and expensive to use; the loaded object is the opposite, and this function is
+called once per request.
 """
 
 from __future__ import annotations
@@ -14,7 +20,6 @@ from pathlib import Path
 
 import torch
 import torchvision.transforms as transforms
-from megadetector.detection.run_detector_batch import load_and_run_detector_batch
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -124,21 +129,54 @@ def _to_tag(scientific_name: str, label_map: dict[str, str]) -> str:
     return scientific_name.replace("_", " ").lower()
 
 
+# The threshold MegaDetector's own batch runner defaults to. It is deliberately
+# far below `conf_thresh`: the detector hands back nearly everything it saw, and
+# the real filtering happens in the loop below. Keeping the old number is what
+# makes the Phase 5 accuracy figure comparable with the Phase 2 one — raising it
+# here would silently discard detections and change the result.
+DETECTION_FLOOR = 0.005
+
+
+def _detect(detector, path: str) -> dict:
+    """Run MegaDetector on one image, returning its record for that image.
+
+    An unreadable file yields an empty detection list rather than raising. That
+    asymmetry caused a real defect in Phase 4 — `make_thumbnail` raises on the
+    same input — so the handler now establishes readability before calling here.
+    The behaviour is kept because the evaluation harness relies on one bad file
+    not aborting a 26-image run.
+    """
+    try:
+        with Image.open(path) as handle:
+            image = handle.convert("RGB")
+    except OSError:
+        logger.warning("Could not open %s; recording no detections", path)
+        return {"file": path, "detections": []}
+
+    return detector.generate_detections_one_image(
+        image,
+        # The returned record is keyed by whatever is passed here, and the caller
+        # looks results up by path. Omitting it makes every record say "unknown".
+        image_id=path,
+        detection_threshold=DETECTION_FLOOR,
+    )
+
+
 @torch.no_grad()
 def tag_images(
     image_paths: list[str],
-    md_model_path: str,
+    detector,
     species_model,
     classes: list[str],
     label_map: dict[str, str],
     conf_thresh: float = 0.05,
 ) -> dict[str, dict[str, int]]:
-    """Tag several images in a single MegaDetector pass.
+    """Tag several images with an already-loaded MegaDetector.
 
-    Loading MegaDetector costs about thirty seconds; running inference on one
-    image costs about two. Passing every path in one call pays the load once
-    instead of once per image, which is what makes evaluating a whole test set
-    practical rather than a coffee break.
+    `detector` is a MegaDetector PTDetector, obtained from `load_detector`. It is
+    passed in rather than loaded here so that the caller decides how long it
+    lives: the Lambda keeps one for the life of its execution environment, and
+    the evaluation harness keeps one for the length of a run.
 
     Returns {image_path: {common_name: count}}. An image containing no animals
     maps to an empty dict, which is a valid result and not an error.
@@ -151,10 +189,9 @@ def tag_images(
     except StopIteration:
         device = torch.device("cpu")
 
-    detections_per_image = load_and_run_detector_batch(
-        model_file=str(md_model_path),
-        image_file_names=[str(path) for path in image_paths],
-    )
+    detections_per_image = [
+        _detect(detector, str(path)) for path in image_paths
+    ]
 
     results: dict[str, dict[str, int]] = {}
 
@@ -162,6 +199,12 @@ def tag_images(
         path = record["file"]
         counter: collections.Counter[str] = collections.Counter()
 
+        # Opened a second time, on purpose. `_detect` needed the pixels to find
+        # the boxes; this needs them to cut the boxes out. Threading one image
+        # through both would save a decode, but detection and classification are
+        # separable stages and keeping them so is worth more than the decode:
+        # `conf_thresh` can be retuned over cached detections without touching
+        # this. Measured cost is ~30 ms against ~400 ms of inference.
         try:
             image = Image.open(path).convert("RGB")
         except OSError:
@@ -205,7 +248,7 @@ def tag_images(
 
 def tag_image(
     image_path: str,
-    md_model_path: str,
+    detector,
     species_model,
     classes: list[str],
     label_map: dict[str, str],
@@ -217,5 +260,5 @@ def tag_image(
     exactly one file.
     """
     return tag_images(
-        [image_path], md_model_path, species_model, classes, label_map, conf_thresh
+        [image_path], detector, species_model, classes, label_map, conf_thresh
     ).get(str(image_path), {})

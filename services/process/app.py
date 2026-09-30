@@ -157,15 +157,19 @@ def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, 
     version = artefact_version()
 
     started = time.time()
-    detector_path, species_model, classes, label_map = get_models(s3, artefact_bucket(), version)
+    detector, species_model, classes, label_map = get_models(s3, artefact_bucket(), version)
     model_load_ms = int((time.time() - started) * 1000)
 
     # Readability was established by the caller. Note that tagger.tag_images
     # swallows a failed open and returns no tags rather than raising, so an
     # unreadable file reaching here would be scored as "no animals present"
     # instead of failing - which is precisely why the check happens earlier.
+    # Now measures inference alone. Before Phase 5 this number also carried the
+    # detector's deserialisation, because the tagger was handed a path and loaded
+    # it here, inside the timed section. That is why the old benchmark showed
+    # "inference" at 8 s warm when the real figure was closer to 7.
     started = time.time()
-    tags = tag_image(str(path), detector_path, species_model, classes, label_map)
+    tags = tag_image(str(path), detector, species_model, classes, label_map)
     inference_ms = int((time.time() - started) * 1000)
 
     return tags, model_load_ms, inference_ms
