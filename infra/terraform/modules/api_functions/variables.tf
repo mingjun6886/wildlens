@@ -31,16 +31,11 @@ variable "log_retention_days" {
   default     = 14
 }
 
-variable "timeout_seconds" {
-  description = <<-EOT
-    These handlers do one DynamoDB call and some signing, so they finish in
-    milliseconds. The timeout exists to bound a hung dependency, not to allow for
-    slow work — and it stays well under API Gateway's own hard limit of 29
-    seconds, so a slow function produces its own error rather than a bare 504.
-  EOT
-  type        = number
-  default     = 10
-}
+# Timeouts are set per function, in the map in main.tf, not here. Two of the three
+# handlers do one DynamoDB call and some signing and finish in milliseconds; the
+# third waits on an ML inference that takes up to twenty seconds. A single shared
+# value is how the third one came to be killed before the timeout it was written
+# to respect — see the note next to `search`.
 
 variable "memory_mb" {
   description = <<-EOT

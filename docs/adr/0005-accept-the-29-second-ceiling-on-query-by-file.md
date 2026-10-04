@@ -52,9 +52,49 @@ benchmarking produced two invocations 11 seconds apart, the first running 56.7 s
 and the second returning in 6.5 s because the idempotency guard caught it. On the
 upload path the guard saves the duplicate. Here there would be no guard.
 
-**The query file is capped at 7 MB.** API Gateway limits a request payload to
-10 MB and base64 inflates by a third. Unrelated to the 25 MB upload limit, because
-that path never sends bytes through the API — which is why it can be larger.
+**The query file is capped at 4 MB, and the first version of this number was
+wrong.** It said 7 MB, reasoning from API Gateway's documented 10 MB request cap.
+The binding limit is Lambda's: a proxy integration invokes the function
+synchronously, and a synchronous invocation payload is capped at **6 MB** holding
+the whole event — the base64 body plus the headers and `requestContext` API Gateway
+wraps around it. The gateway refuses anything larger with `413 Request Too Long`,
+naming nothing about Lambda.
+
+Measured after the fact: 2.7 MB of base64 passed, 8.3 MB was refused. 4 MB of
+original file encodes to about 5.3 MB and leaves room for the wrapper.
+
+The browser checks before sending, because a request the gateway refuses never
+reaches this project's code and the caller otherwise gets a bare 413. Unrelated to
+the 25 MB upload limit, because that path sends bytes straight to S3 and never
+through the API — which is precisely why it can be larger.
+
+## A correction: the 503 path could not run
+
+The timeout reasoning above was correct and the deployment contradicted it.
+
+The `search` function was created with a 10-second timeout, from a map whose
+docstring read "one DynamoDB call and some signing, so they finish in
+milliseconds". That was written when the map held only `status`. It is true of two
+of the three handlers, and reusing it for the one that waits on an ML inference
+meant the function was killed at 10 s — fifteen seconds before the `read_timeout`
+it was written to respect, and well before a cold tagging function could answer.
+
+API Gateway returned `502`, and the `503` "model is warming up" response described
+above **was unreachable in production**. It had been exercised only by a unit test.
+
+An earlier manual test did pass, in 7.9 s, because the tagging function happened to
+be warm. It was inside the limit by two seconds, by luck.
+
+Timeouts are now per function, with the ordering stated where they are set:
+
+    boto3 read_timeout   25 s   < the function timeout, so the handler catches it
+    search timeout       28 s   < the gateway, so the handler answers first
+    API Gateway          29 s   hard, cannot be raised
+
+The general shape is one this project has now hit three times: **a value that was
+correct when written became wrong when a new case joined the same map, and nothing
+connected the two changes.** The others were the 30-day object expiry (ADR 8) and
+the one-hour `FAILED` expiry.
 
 ## Alternatives considered, with prices
 

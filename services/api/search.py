@@ -79,11 +79,24 @@ PROJECTION = "fileId, #s, tags, s3Key, thumbKey, uploadedBy, createdAt"
 # and a client that needs more needs pagination rather than a bigger page.
 MAX_RESULTS = 100
 
-# API Gateway caps a request payload at 10 MB, and base64 inflates by a third, so
-# roughly 7 MB of original file. Unrelated to the 25 MB upload limit, because that
-# path never sends bytes through the API at all — which is the reason it can be
-# larger.
-MAX_QUERY_BYTES = 7 * 1024 * 1024
+# The binding limit is Lambda's, not API Gateway's, and getting that wrong is why
+# the first version of this number was too generous.
+#
+# API Gateway's documented request cap is 10 MB. But a proxy integration invokes
+# Lambda synchronously, and a synchronous invocation payload is capped at 6 MB —
+# and that 6 MB holds the whole event: the base64 body plus the headers and
+# requestContext API Gateway wraps around it. The gateway refuses anything that
+# would exceed it, with 413 "Request Too Long" rather than anything naming Lambda.
+#
+# Measured: an 8.3 MB base64 body was refused by the gateway; 2.7 MB passed.
+#
+# base64 inflates by a third, so 4 MB of original file encodes to about 5.3 MB and
+# leaves room for the event wrapper. Checked client-side too, because a request
+# refused by the gateway never reaches this code and the caller gets a bare 413.
+#
+# Unrelated to the 25 MB upload limit: that path sends bytes straight to S3 and
+# never through the API, which is precisely why it can be larger.
+MAX_QUERY_BYTES = 4 * 1024 * 1024
 
 
 def done_records():
@@ -213,6 +226,14 @@ def tags_of_query_file(encoded: str, extension: str, correlation: str) -> dict[s
             InvocationType="RequestResponse",
             Payload=json.dumps(payload).encode(),
         )
+    except botocore.exceptions.ClientError as error:
+        # Reachable when the body slips past both the gateway's check and the one
+        # above but the assembled invoke payload still exceeds 6 MB. Returning 413
+        # rather than letting it become a 500 means the caller learns the cause.
+        if error.response["Error"]["Code"] == "RequestEntityTooLargeException":
+            log_event("query file too large for an invoke", correlation)
+            raise ClientError(413, "query file is too large to identify") from error
+        raise
     except botocore.exceptions.ReadTimeoutError as error:
         # The tagging function is cold: 20 s warm-up against a 25 s budget leaves
         # very little, and the first invocation after a deployment takes over 40 s.

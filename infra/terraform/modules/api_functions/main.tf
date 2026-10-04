@@ -12,6 +12,7 @@ locals {
     status = {
       handler     = "status.handler"
       description = "GET /files/{fileId} - the poll target that makes async upload usable."
+      timeout     = 10
       statements = [
         {
           Sid      = "ReadOneRecord"
@@ -34,6 +35,7 @@ locals {
     upload = {
       handler     = "upload.handler"
       description = "POST /upload - reserves a record and returns a presigned PUT."
+      timeout     = 10
       statements = [
         {
           # GetItem to answer "have we seen this digest?", UpdateItem to reserve it.
@@ -64,6 +66,27 @@ locals {
     search = {
       handler     = "search.handler"
       description = "POST /search/{tags,species,byfile} - scan, filter in memory, sign URLs."
+
+      # 28 s, not the 10 s the other two use, and the difference is the whole
+      # reason this is per-function rather than one shared setting.
+      #
+      # /search/byfile waits synchronously on the tagging function: 6 s warm, 20 s
+      # cold. At 10 s this handler was killed mid-wait and API Gateway returned 502
+      # - which meant the 503 "model is warming up" path in search.py, written and
+      # tested deliberately, could never run. The function died fifteen seconds
+      # before its own read timeout.
+      #
+      # The ordering constraint, innermost first:
+      #
+      #   boto3 read_timeout   25 s  < this timeout, so the handler catches it
+      #   this timeout         28 s  < the gateway, so the handler answers first
+      #   API Gateway           29 s  hard, cannot be raised
+      #
+      # The 10 s came from a docstring written when this map held only `status`:
+      # "one DynamoDB call and some signing, so they finish in milliseconds". True
+      # of two of these three, and reusing it for the third was the defect.
+      timeout = 28
+
       statements = [
         {
           # Scan, because the thing being searched is a map and DynamoDB cannot index
@@ -182,7 +205,10 @@ resource "aws_lambda_function" "function" {
   # edit to a handler.
   source_code_hash = data.archive_file.api.output_base64sha256
 
-  timeout     = var.timeout_seconds
+  # Per function, because one of the three waits on an ML inference and the other
+  # two do not. A shared value is how the search handler ended up being killed
+  # fifteen seconds before the timeout it was written to respect.
+  timeout     = each.value.timeout
   memory_size = var.memory_mb
 
   environment {

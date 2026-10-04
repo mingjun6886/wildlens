@@ -5,7 +5,8 @@
 
 import { ApiError, searchByFile, searchBySpecies, searchByTags } from "./api.js";
 import { claims, completeSignIn, isSignedIn, signIn, signOut } from "./auth.js";
-import { toBase64, uploadFile } from "./upload.js";
+import { toBase64 } from "./hash.js";
+import { uploadFile } from "./upload.js";
 
 const el = (id) => document.getElementById(id);
 

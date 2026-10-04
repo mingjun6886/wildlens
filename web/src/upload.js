@@ -97,15 +97,3 @@ async function pollUntilSettled(fileId, onProgress) {
     "still processing after two minutes. The record will settle; reload to check again.",
   );
 }
-
-/** Read a File as base64, for /search/byfile. */
-export async function toBase64(file) {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  // Chunked, because String.fromCharCode(...bytes) on a multi-megabyte array
-  // exceeds the argument limit and throws RangeError.
-  for (let index = 0; index < bytes.length; index += 8192) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 8192));
-  }
-  return btoa(binary);
-}

@@ -14,6 +14,7 @@
  */
 
 import { idToken, isSignedIn, signIn } from "./auth.js";
+import { errorMessage, parseBody } from "./http.js";
 
 const BASE = "/api";
 
@@ -53,13 +54,16 @@ async function request(path, options = {}) {
     throw new ApiError(401, "session rejected");
   }
 
-  const text = await response.text();
-  const body = text ? JSON.parse(text) : {};
+  const body = parseBody(await response.text());
 
   if (!response.ok) {
-    // correlationId is returned on a 500 and is what ties a user's report to a
-    // log line, so it is carried through rather than discarded.
-    throw new ApiError(response.status, body.error ?? response.statusText, body.correlationId);
+    // correlationId appears on a 500 and is what ties a user's report to a log
+    // line, so it is carried through rather than discarded.
+    throw new ApiError(
+      response.status,
+      errorMessage(body, response.statusText),
+      body.correlationId,
+    );
   }
 
   return body;
