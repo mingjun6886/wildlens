@@ -190,13 +190,30 @@ cannot see.
 
 ---
 
-## The browser cannot call the API but curl can
+## Something works from curl and fails in the browser
 
-**Symptom:** the browser console says `No 'Access-Control-Allow-Origin' header`,
-while the same request works from a terminal.
+**Symptom:** a request succeeds from a terminal and fails in the browser.
 
-**This is always CORS and never the backend.** A `curl` request sends no `Origin`
-header, so it never triggers the check that is failing.
+**It is never the backend, and it is one of two things.** Telling them apart first
+saves the most time, because the fixes are in different files.
+
+| Console message | Cause | Where to fix |
+|---|---|---|
+| `No 'Access-Control-Allow-Origin' header` | CORS: the server did not permit this origin | API Gateway, or the bucket's CORS rule |
+| `Failed to fetch`, with `Refused to connect ... Content-Security-Policy` above it | CSP: **this page** refused to make the request | the `<meta>` policy in `web/index.html` |
+
+A CSP refusal is the easier one to misread. The fetch rejects with no status code,
+because the request is never sent — so it looks like a network fault or a CORS
+problem, and the request does not appear in the Network tab at all. **If there is
+no request in Network, it is CSP, not CORS.**
+
+This has already happened once: the policy named Cognito under `connect-src` but
+not S3, so the presigned PUT - a fetch, and therefore governed by `connect-src` -
+was refused by the page itself while the bucket's CORS configuration was perfectly
+correct. Any new cross-origin destination has to be added to the policy.
+
+For the CORS half: a `curl` request sends no `Origin` header, so it never triggers
+the check that is failing.
 
 CORS lives in two places, and configuring one and not the other is the hard case:
 the preflight succeeds, so the configuration looks complete, while the real
@@ -223,6 +240,22 @@ If the preflight has the header and this does not, the function's `ALLOWED_ORIGI
 disagrees with the API module's `allowed_origin`. They are set from one variable in
 `envs/dev/variables.tf`; a mismatch means one of the two was deployed and the other
 was not.
+
+**3. The bucket, for an upload.** The browser PUTs straight to S3, which answers
+its own preflight:
+
+```bash
+UPLOAD_URL="<uploadUrl from POST /upload>"
+curl -s -o /dev/null -D - -X OPTIONS "$UPLOAD_URL" \
+  -H 'Origin: http://localhost:3000' \
+  -H 'Access-Control-Request-Method: PUT' \
+  -H 'Access-Control-Request-Headers: content-type' | grep -i 'HTTP\|access-control'
+```
+
+Expect `200` and `Access-Control-Allow-Methods: PUT`. A missing configuration here
+is `NoSuchCORSConfiguration` from `get-bucket-cors`, and `terraform apply` restores
+it. If this preflight succeeds and the browser still fails, it is the CSP — see the
+table above.
 
 ---
 

@@ -56,9 +56,20 @@ under every row of that table. What prevents that is the policy the page ships:
     default-src 'self'; connect-src 'self' https://*.amazoncognito.com;
     img-src 'self' https://*.amazonaws.com data:; object-src 'none'; base-uri 'none'
 
-`connect-src` names the Cognito domain because the token exchange posts there
-directly. The API needs no entry: it is reached through a relative `/api` path,
-same-origin in both environments.
+`connect-src` has to enumerate **every** cross-origin fetch the application makes,
+and the first version of this policy did not. It named Cognito, for the token
+exchange, and omitted S3 — which the presigned PUT goes to. The browser refused the
+upload with `Failed to fetch`: no status code, no request in the Network tab, and
+nothing naming the policy unless the console was open. The bucket's CORS
+configuration was correct the whole time.
+
+So the policy that exists to protect the token blocked the application's own
+upload, and it did so in a way that reads as a network or CORS fault. That is the
+cost of a strict CSP, and it is worth stating next to the benefit: **every new
+destination is a change here, and forgetting one fails in the browser only.**
+
+The API needs no entry: it is reached through a relative `/api` path, same-origin
+in both environments.
 
 **One accepted weakness:** `style-src` allows `unsafe-inline`. The page sets no
 inline styles, but removing the allowance entirely would break the `hidden`

@@ -7,14 +7,28 @@
     <!--
       A strict policy, because the token lives in sessionStorage and any script
       able to run on this origin can read it. This is the real defence; choosing
-      between sessionStorage and localStorage is not.
+      between sessionStorage and localStorage is not. See docs/adr/0009.
 
-      connect-src names the Cognito domain because the token exchange posts there
-      directly. The API is same-origin, so it needs no entry.
+      connect-src has to name every cross-origin fetch the application makes, and
+      the first version of this policy named only Cognito. That blocked the upload:
+      the PUT to S3 is a fetch, so it is governed by connect-src, and the browser
+      refused it with "Failed to fetch" - no status code, and nothing pointing at
+      the policy unless the console is open.
+
+      Both S3 host forms are listed. boto3 currently signs against the global
+      endpoint (bucket.s3.amazonaws.com); pinning a region would move it to
+      bucket.s3.ap-southeast-2.amazonaws.com, and a policy that admitted only the
+      current one would break on a change nobody would connect to this file.
+
+      *.s3.amazonaws.com rather than *.amazonaws.com: a CSP host wildcard may only
+      appear leftmost, but the rest can be a fixed suffix - so this admits any
+      bucket without admitting every AWS service.
+
+      The API needs no entry: it is reached through a relative /api path.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' https://*.amazonaws.com data:; connect-src 'self' https://*.amazoncognito.com; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'"
+      content="default-src 'self'; img-src 'self' https://*.s3.amazonaws.com https://*.s3.ap-southeast-2.amazonaws.com data:; connect-src 'self' https://*.amazoncognito.com https://*.s3.amazonaws.com https://*.s3.ap-southeast-2.amazonaws.com; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'"
     />
     <link rel="stylesheet" href="./src/style.css" />
   </head>
