@@ -29,3 +29,16 @@ variable "thumb_retention_days" {
   type        = number
   default     = 0
 }
+
+variable "web_origins" {
+  description = <<-EOT
+    Origins allowed to PUT to the raw bucket. The browser uploads directly to S3,
+    so this is separate from the API's CORS configuration and both must include an
+    origin for it to work from that origin.
+
+    Local development needs an entry here even though the API itself is reached
+    through a Vite proxy: the presigned URL points at S3, not at the proxy.
+  EOT
+  type        = list(string)
+  default     = ["http://localhost:3000"]
+}

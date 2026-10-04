@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WildLens</title>
+    <!--
+      A strict policy, because the token lives in sessionStorage and any script
+      able to run on this origin can read it. This is the real defence; choosing
+      between sessionStorage and localStorage is not.
+
+      connect-src names the Cognito domain because the token exchange posts there
+      directly. The API is same-origin, so it needs no entry.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' https://*.amazonaws.com data:; connect-src 'self' https://*.amazoncognito.com; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'"
+    />
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>WildLens</h1>
+      <div id="session"></div>
+    </header>
+
+    <main>
+      <section id="signed-out" hidden>
+        <p>Sign in to upload and search camera-trap photographs.</p>
+        <button id="sign-in">Sign in</button>
+      </section>
+
+      <section id="signed-in" hidden>
+        <div id="drop" tabindex="0" role="button" aria-label="Choose or drop an image">
+          <p><strong>Drop an image here</strong></p>
+          <p class="muted">or click to choose &middot; jpg, png, gif, bmp, webp &middot; up to 25 MB</p>
+          <input id="file" type="file" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp" hidden />
+        </div>
+
+        <ul id="activity"></ul>
+
+        <h2>Search</h2>
+        <form id="search-form">
+          <fieldset>
+            <legend>By species &mdash; any of these</legend>
+            <input id="species" type="text" placeholder="dingo, domestic cat" />
+            <button type="submit" value="species">Search</button>
+          </fieldset>
+          <fieldset>
+            <legend>By tags &mdash; all of these, at least this many</legend>
+            <input id="tags" type="text" placeholder="cattle 2, magpie 1" />
+            <button type="submit" value="tags">Search</button>
+          </fieldset>
+          <fieldset>
+            <legend>By example &mdash; photographs containing at least what this one does</legend>
+            <input id="sample" type="file" accept=".jpg,.jpeg,.png" />
+            <p class="muted">
+              The sample is identified and discarded. It is never stored.
+            </p>
+          </fieldset>
+        </form>
+
+        <p id="search-note" class="muted"></p>
+        <div id="results"></div>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

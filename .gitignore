@@ -44,3 +44,11 @@ docs/vi/
 # apply, so committing one only produces churn — and a stale copy in the tree is
 # worse than none, since it looks like the deployed artefact and is not.
 **/.build/
+
+# --- web client --------------------------------------------------------------
+node_modules/
+web/dist/
+# Generated from Terraform output by scripts/write-web-env.sh. Every value in it
+# changes on a destroy/apply cycle, so a committed copy is wrong as soon as
+# somebody recreates the estate.
+web/.env.local

@@ -96,3 +96,42 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     }
   }
 }
+# --- CORS on the raw bucket --------------------------------------------------
+#
+# The browser PUTs straight to S3 through a presigned URL, so that upload is a
+# cross-origin request and S3 answers the preflight itself. Without this rule the
+# bucket returns NoSuchCORSConfiguration, the preflight fails, and the PUT never
+# happens — while the same presigned URL works perfectly from curl, because curl
+# sends no Origin header and triggers no preflight.
+#
+# That asymmetry is the trap: the failure appears only in a browser, and the
+# console message is "No 'Access-Control-Allow-Origin' header", identical to the
+# message a missing API Gateway CORS rule produces. Two unrelated causes, one
+# symptom.
+#
+# The thumbnail bucket deliberately has no rule. Thumbnails are loaded with
+# <img src="...">, and an image embed is not a fetch — CORS does not apply. A rule
+# there would be configuration nobody needs.
+resource "aws_s3_bucket_cors_configuration" "raw" {
+  bucket = aws_s3_bucket.this["raw"].id
+
+  cors_rule {
+    # PUT only. The browser never reads from this bucket: it reaches originals
+    # through a presigned GET in an <img> or a link, neither of which is a fetch.
+    allowed_methods = ["PUT"]
+    allowed_origins = var.web_origins
+
+    # Content-Type must be listed. The presigned URL signs that header, so the
+    # browser is required to send it — and a header the client must send but the
+    # CORS rule does not allow makes the preflight fail before the PUT.
+    #
+    # Content-Length is not listed, and must not be: it is a forbidden header
+    # name that the browser sets itself and never asks permission for.
+    allowed_headers = ["Content-Type"]
+
+    # ETag is the only response header worth exposing; without it the client
+    # cannot read the ETag of its own upload.
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3600
+  }
+}

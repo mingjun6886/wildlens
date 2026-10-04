@@ -54,3 +54,16 @@ variable "allowed_origin" {
   type        = string
   default     = "http://localhost:3000"
 }
+
+variable "web_origins" {
+  description = <<-EOT
+    Origins the web client is served from. Phase 7 appends the CloudFront domain
+    rather than replacing the local one, so development keeps working.
+
+    Used for the raw bucket's CORS rule. The API needs no CORS entry for these,
+    because the client reaches it through a relative /api path: proxied by Vite in
+    development, served by CloudFront from the API Gateway origin in production.
+  EOT
+  type        = list(string)
+  default     = ["http://localhost:3000"]
+}

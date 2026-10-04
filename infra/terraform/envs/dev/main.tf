@@ -35,6 +35,10 @@ module "storage" {
   name_prefix        = local.name_prefix
   suffix             = local.suffix
   raw_retention_days = var.raw_retention_days
+
+  # The browser PUTs directly to S3, so S3 needs its own CORS rule — separate
+  # from the API's, and required even in development where the API is proxied.
+  web_origins = var.web_origins
 }
 
 module "database" {

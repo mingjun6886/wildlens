@@ -1,0 +1,14 @@
+{
+  "name": "wildlens-web",
+  "private": true,
+  "type": "module",
+  "description": "Browser client for WildLens. No framework: the whole app is six modules.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^7.1.5"
+  }
+}
