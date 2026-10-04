@@ -48,3 +48,34 @@ output "api_invoke_url" {
   description = "Base URL of the API. Append /files/{fileId} and so on."
   value       = module.api.invoke_url
 }
+
+# --- Named for the runbook ---------------------------------------------------
+#
+# docs/runbook.md reads every name from here rather than hard-coding one, because
+# the bucket suffix is regenerated whenever the estate is destroyed and recreated.
+# A procedure that embeds a name is wrong the first time somebody runs destroy.
+
+output "rest_api_id" {
+  description = "Needed to force a stage redeployment by hand. See the runbook."
+  value       = module.api.rest_api_id
+}
+
+output "raw_bucket_name" {
+  description = "Uploaded originals."
+  value       = module.storage.bucket_names["raw"]
+}
+
+output "thumb_bucket_name" {
+  description = "Generated thumbnails."
+  value       = module.storage.bucket_names["thumb"]
+}
+
+output "models_bucket_name" {
+  description = "Model artefacts, one prefix per version."
+  value       = module.storage.bucket_names["models"]
+}
+
+output "table_name" {
+  description = "The records table."
+  value       = module.database.table_name
+}
