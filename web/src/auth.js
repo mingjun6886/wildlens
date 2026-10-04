@@ -19,7 +19,9 @@
  * forces, and are gone when the tab closes. A script able to run on this origin
  * can read them, and no choice available to a browser-only client prevents that -
  * HttpOnly cookies would, but they need a backend endpoint to set them. The real
- * defence is a strict CSP and no third-party scripts. Recorded as an ADR.
+ * defence is a strict CSP and no third-party scripts. The reasoning, including
+ * why an HttpOnly cookie was not chosen, is in
+ * docs/adr/0009-keep-tokens-in-sessionstorage.md.
  */
 
 import { challengeFor, fromBase64url, randomVerifier } from "./pkce.js";
