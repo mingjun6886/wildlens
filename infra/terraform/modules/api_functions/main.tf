@@ -67,8 +67,9 @@ locals {
       statements = [
         {
           # Scan, because the thing being searched is a map and DynamoDB cannot index
-          # into one. Recorded as an ADR with the threshold at which that stops being
-          # the right answer.
+          # into one. docs/adr/0004-scan-and-filter-in-memory.md records the threshold
+          # at which that stops being the right answer (~2,000 records) and what
+          # replaces it.
           #
           # Scan and nothing else: no GetItem, no write of any kind. A search cannot
           # modify a record however badly it goes wrong.

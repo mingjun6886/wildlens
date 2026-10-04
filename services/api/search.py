@@ -10,10 +10,11 @@ same matching loop, the same signed-URL assembly. Only the predicate differs, so
 each route is a few lines and the dispatch is on the path.
 
 Every query scans the whole table and filters in memory. That is a deliberate
-choice at this scale rather than an oversight, and it is recorded as an ADR with
-the threshold at which a secondary index becomes worth its write cost. The short
-version: tags are a map, DynamoDB cannot index into one, and an index per species
-would mean rewriting the schema for a query pattern that currently takes 40 ms.
+choice at this scale rather than an oversight. The short version: tags are a map,
+DynamoDB cannot index into one, and an index per species would mean rewriting the
+schema for a query pattern that currently takes 40 ms.
+See docs/adr/0004-scan-and-filter-in-memory.md for the threshold at which that
+stops being true and what replaces it.
 """
 
 from __future__ import annotations
@@ -221,7 +222,9 @@ def tags_of_query_file(encoded: str, extension: str, correlation: str) -> dict[s
         # provisioned concurrency removes it for about $15 a month, 15% of this
         # project's budget for one route, and making the route asynchronous like
         # upload adds a second polling flow. Telling the caller what happened and
-        # when to retry costs nothing. See docs/adr for the comparison.
+        # when to retry costs nothing.
+        # docs/adr/0005-accept-the-29-second-ceiling-on-query-by-file.md has the
+        # priced comparison of all three options.
         log_event("query mode timed out", correlation, function=PROCESS_FUNCTION)
         raise ClientError(503, "the model is warming up, retry in about 30 seconds") from error
 

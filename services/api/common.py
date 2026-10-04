@@ -118,9 +118,11 @@ def path_param(event: dict, name: str) -> str:
 def json_body(event: dict) -> dict:
     """Parse and validate the body as a JSON object.
 
-    REST API does no request validation here on purpose — see the ADR — so this
-    is where a malformed body becomes a 400 rather than a 502 from an unhandled
-    exception.
+    REST API can validate a JSON schema at the gateway and deliberately does not
+    here: its rejection is generic, and a caller cannot tell a malformed digest
+    from an unsupported extension. See the closing section of
+    docs/adr/0003-rest-api-rather-than-http-api.md. So this is where a malformed
+    body becomes a 400 rather than a 502 from an unhandled exception.
     """
     raw = event.get("body") or ""
     if not raw.strip():

@@ -70,8 +70,13 @@ Full design spec: [`docs/design/`](docs/design/) —
 goals, architecture decisions, data model, API contract, ML pipeline, error
 handling, observability, cost controls and build plan.
 
-`docs/architecture.md` and the architecture decision records under `docs/adr/`
-are written up as each milestone lands.
+Why it was built this way: [`docs/adr/`](docs/adr/) — eight decision records so
+far, written when each decision was taken rather than at the end. Three of them
+record a decision that was reversed by a measurement, which is kept rather than
+tidied away.
+
+Latency measurements, before and after each optimisation:
+[`docs/benchmarks/`](docs/benchmarks/).
 
 > Built solo as a portfolio project. The problem domain originates from a
 > four-person university group assignment (FIT5225, Monash University); this is

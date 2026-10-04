@@ -21,7 +21,9 @@ locals {
 # stated goal of this project. At a few thousand requests the price difference is
 # a few cents, so cost is not an argument here in either direction.
 #
-# The trade is recorded as an ADR.
+# Recorded in docs/adr/0003-rest-api-rather-than-http-api.md, including the
+# correction: HTTP API was recommended first, on a cost argument whose absolute
+# figure turned out to be nil.
 resource "aws_api_gateway_rest_api" "api" {
   name        = local.api_name
   description = "WildLens API. Every route sits behind the Cognito authoriser."
