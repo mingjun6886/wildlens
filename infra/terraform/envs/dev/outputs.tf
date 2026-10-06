@@ -79,3 +79,18 @@ output "table_name" {
   description = "The records table."
   value       = module.database.table_name
 }
+
+output "site_url" {
+  description = "The deployed site. Serves both the client and, under the stage prefix, the API."
+  value       = module.cdn.url
+}
+
+output "cdn_distribution_id" {
+  description = "Needed to invalidate index.html after a deploy. Used by scripts/deploy-web.sh."
+  value       = module.cdn.distribution_id
+}
+
+output "web_bucket_name" {
+  description = "Where the built site is synced. Private; CloudFront reads it through OAC."
+  value       = module.storage.bucket_names["web"]
+}

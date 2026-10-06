@@ -6,17 +6,24 @@
  * mid-session - they last an hour - and if six modules each called fetch, six
  * would have to handle it, and the sixth would not.
  *
- * Requests go to a relative /api path in both development and production. In
- * development Vite proxies it, which happens server-side where CORS does not
- * apply. In production CloudFront serves the same path from the API Gateway
- * origin, so the browser never makes a cross-origin request and there is no CORS
- * configuration in either. See the Phase 7 notes.
+ * Requests go to a relative path in both environments — the API Gateway stage
+ * name, /v1. In development Vite proxies it, which happens server-side where CORS
+ * does not apply. In production CloudFront routes the same prefix to the API
+ * Gateway origin. Either way the browser makes no cross-origin request, so there
+ * is no API CORS to configure in either environment.
+ *
+ * The prefix matching the stage is what lets CloudFront forward the path
+ * unchanged: it cannot rewrite one without a CloudFront Function.
  */
 
 import { idToken, isSignedIn, signIn } from "./auth.js";
 import { errorMessage, parseBody } from "./http.js";
 
-const BASE = "/api";
+// The API Gateway stage name, which the client uses as its request prefix. Same
+// value as the CloudFront behaviour and the Vite proxy, read from one place: a
+// prefix that disagrees with the stage is served by the site's own origin and
+// comes back as a 404, which reads as a missing route rather than a wrong prefix.
+const BASE = import.meta.env?.VITE_API_PREFIX ?? "/v1";
 
 export class ApiError extends Error {
   constructor(status, message, correlationId) {

@@ -5,6 +5,7 @@ export default defineConfig(({ mode }) => {
   // by scripts/write-web-env.sh. Nothing here hard-codes an API URL, because the
   // API id changes whenever the estate is destroyed and recreated.
   const env = loadEnv(mode, process.cwd(), "");
+  const prefix = env.VITE_API_PREFIX || "/v1";
 
   return {
     // Relative paths, because the built site is served from S3 behind CloudFront
@@ -27,11 +28,18 @@ export default defineConfig(({ mode }) => {
       // In production the same relative /api path is served by CloudFront from
       // the API Gateway origin, so the client code is identical in both and
       // there is no origin to configure in either.
+      // The prefix is the API Gateway stage name, taken from the generated env
+      // file rather than written here, because the same string has to appear in
+      // the client, in this proxy, and in the CloudFront behaviour. Three copies
+      // of a value that must agree is how a 404 from the wrong origin happens.
       proxy: {
-        "/api": {
+        [prefix]: {
+          // The target already ends with the stage, and the rewrite strips the
+          // prefix the browser sent — so /v1/files/x becomes <target>/files/x,
+          // which is the same URL CloudFront produces in production.
           target: env.VITE_API_URL,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ""),
+          rewrite: (path) => path.replace(new RegExp(`^${prefix}`), ""),
         },
       },
     },

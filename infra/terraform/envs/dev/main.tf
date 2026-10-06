@@ -38,7 +38,10 @@ module "storage" {
 
   # The browser PUTs directly to S3, so S3 needs its own CORS rule — separate
   # from the API's, and required even in development where the API is proxied.
-  web_origins = var.web_origins
+  #
+  # This is the one place CORS is still unavoidable. Everything else is same-origin
+  # through CloudFront; the presigned PUT goes to S3 by definition.
+  web_origins = concat(var.web_origins, [module.cdn.url])
 }
 
 module "database" {
@@ -84,10 +87,11 @@ module "auth" {
   name_prefix = local.name_prefix
   suffix      = local.suffix
 
-  # Phase 7 appends the CloudFront URL here. The port must match Vite's
-  # strictPort setting exactly, or every sign-in fails with redirect_mismatch.
-  callback_urls = var.web_callback_urls
-  logout_urls   = var.web_callback_urls
+  # Local development and the deployed site, both. Appending rather than replacing
+  # is what keeps `npm run dev` working after the site goes up — and the local port
+  # must match Vite's strictPort exactly, or sign-in fails with redirect_mismatch.
+  callback_urls = concat(var.web_callback_urls, [module.cdn.url])
+  logout_urls   = concat(var.web_callback_urls, [module.cdn.url])
 }
 
 module "api_functions" {
@@ -115,6 +119,7 @@ module "api_functions" {
 module "api" {
   source = "../../modules/api"
 
+  stage_name            = var.api_stage
   name_prefix           = local.name_prefix
   cognito_user_pool_arn = module.auth.user_pool_arn
   allowed_origin        = var.allowed_origin
@@ -163,4 +168,20 @@ module "api" {
       function_name = module.api_functions.function_names["search"]
     }
   }
+}
+
+module "cdn" {
+  source = "../../modules/cdn"
+
+  name_prefix = local.name_prefix
+
+  web_bucket_id                   = module.storage.bucket_ids["web"]
+  web_bucket_arn                  = module.storage.bucket_arns["web"]
+  web_bucket_regional_domain_name = module.storage.bucket_regional_domain_names["web"]
+
+  api_domain_name = replace(replace(module.api.invoke_url, "https://", ""), "/${var.api_stage}", "")
+
+  # The prefix CloudFront routes to the API is the API Gateway stage name, which is
+  # what lets the path be forwarded unchanged. See the module's variables.
+  api_path_prefix = "/${var.api_stage}"
 }

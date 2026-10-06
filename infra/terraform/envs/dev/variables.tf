@@ -67,3 +67,17 @@ variable "web_origins" {
   type        = list(string)
   default     = ["http://localhost:3000"]
 }
+
+variable "api_stage" {
+  description = <<-EOT
+    API Gateway stage name, which doubles as the path prefix CloudFront routes to
+    the API.
+
+    The two have to be the same string. CloudFront cannot rewrite a path without a
+    CloudFront Function, so a request for /v1/files/x has to arrive at API Gateway
+    as /v1/files/x — stage v1, resource /files/x. Naming the prefix after the stage
+    removes the need for the function entirely.
+  EOT
+  type        = string
+  default     = "v1"
+}
