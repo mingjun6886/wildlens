@@ -3,9 +3,9 @@
 #
 #   ./scripts/build-and-push.sh [tag]
 #
-# Defaults to the tag "latest". CI will call this same script in Phase 10, which
-# is why the registry URL is read from Terraform rather than hard-coded: there is
-# one source of truth for where the image lives, and it is the state file.
+# Defaults to the tag "latest". Run by hand: CI has no deploy job (ADR 10). The
+# registry URL is read from Terraform rather than hard-coded, so there is one
+# source of truth for where the image lives, and it is the state file.
 
 set -euo pipefail
 

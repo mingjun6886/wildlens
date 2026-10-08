@@ -393,3 +393,60 @@ aws logs filter-log-events --log-group-name /aws/lambda/wildlens-dev-process \
 ## (Phase 9) The dashboard
 
 Needs the dashboard.
+
+---
+
+## Bootstrapping CI
+
+**When:** once, and again only if the role is destroyed and recreated.
+
+The plan workflow assumes a role that Terraform creates, so the role has to exist
+before CI can use it.
+
+```bash
+export AWS_PROFILE=wildlens
+terraform -chdir=infra/terraform/envs/dev plan      # expect only additions
+terraform -chdir=infra/terraform/envs/dev apply
+terraform -chdir=infra/terraform/envs/dev output -raw plan_role_arn
+```
+
+Then, in the GitHub repository: **Settings → Secrets and variables → Actions →
+Variables → New repository variable**, name `AWS_PLAN_ROLE_ARN`, value the ARN
+printed above. It is a variable, not a secret: an ARN is not sensitive.
+
+Until the variable is set, the plan workflow fails at its first step with a
+message naming it.
+
+After the apply, confirm the trust policy is what the module intends. The plan
+cannot show it, because it embeds an ARN that does not exist until then:
+
+```bash
+aws iam get-role --role-name wildlens-dev-ci-plan \
+  --query 'Role.AssumeRolePolicyDocument.Statement[0].Condition' --output json
+```
+
+The `sub` condition must read `repo:mingjun6886/wildlens:pull_request` and nothing
+broader.
+
+## The plan on a pull request lists everything as new
+
+**Symptom:** the plan job shows dozens of resources to add.
+
+The estate has been destroyed, so the state is empty and the plan is correct.
+Nothing is wrong. Apply it before judging an infrastructure pull request, or
+read only the lines for the resources the pull request touches.
+
+## Making `check` required on `main`
+
+Not applied by default, because it blocks direct pushes to `main`. To apply it:
+
+```bash
+gh api -X PUT repos/mingjun6886/wildlens/branches/main/protection \
+  -f 'required_status_checks[strict]=true' \
+  -f 'required_status_checks[contexts][]=check' \
+  -F 'enforce_admins=false' \
+  -F 'required_pull_request_reviews=null' \
+  -F 'restrictions=null'
+```
+
+`enforce_admins=false` lets the owner bypass it in an emergency.
