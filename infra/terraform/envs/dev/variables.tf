@@ -81,3 +81,15 @@ variable "api_stage" {
   type        = string
   default     = "v1"
 }
+
+variable "github_repository" {
+  description = "GitHub owner/repo whose pull requests may assume the read-only plan role."
+  type        = string
+  default     = "mingjun6886/wildlens"
+}
+
+variable "state_bucket" {
+  description = "Bucket holding the Terraform state, which the plan role may read. Must match backend.tf, which cannot reference variables."
+  type        = string
+  default     = "wildlens-tfstate-895770859102"
+}

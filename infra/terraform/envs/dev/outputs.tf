@@ -94,3 +94,8 @@ output "web_bucket_name" {
   description = "Where the built site is synced. Private; CloudFront reads it through OAC."
   value       = module.storage.bucket_names["web"]
 }
+
+output "plan_role_arn" {
+  description = "Set the GitHub repository variable AWS_PLAN_ROLE_ARN to this value."
+  value       = module.ci.plan_role_arn
+}

@@ -185,3 +185,13 @@ module "cdn" {
   # what lets the path be forwarded unchanged. See the module's variables.
   api_path_prefix = "/${var.api_stage}"
 }
+
+# Lets pull requests run `terraform plan` without stored AWS keys. The role is
+# read-only by construction; CI never applies.
+module "ci" {
+  source = "../../modules/ci"
+
+  name_prefix       = local.name_prefix
+  github_repository = var.github_repository
+  state_bucket      = var.state_bucket
+}
