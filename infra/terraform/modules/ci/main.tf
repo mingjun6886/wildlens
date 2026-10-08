@@ -56,9 +56,12 @@ resource "aws_iam_role_policy" "state_and_data" {
         Resource = "arn:aws:s3:::${var.state_bucket}"
       },
       {
-        # ReadOnlyAccess would otherwise let this role read every uploaded
-        # image and every row in the table. `plan` needs resource metadata, not
-        # user data. An explicit Deny overrides any Allow.
+        # ReadOnlyAccess would otherwise let this role read every row in the
+        # table, the application logs, and the list of users. `plan` needs
+        # resource metadata, not user data. An explicit Deny overrides any Allow.
+        #
+        # PartiQLSelect is listed because it reads rows without using GetItem,
+        # Query or Scan, and so slips past a deny that names only those.
         Sid    = "DenyUserDataReads"
         Effect = "Deny"
         Action = [
@@ -66,13 +69,22 @@ resource "aws_iam_role_policy" "state_and_data" {
           "dynamodb:BatchGetItem",
           "dynamodb:Query",
           "dynamodb:Scan",
+          "dynamodb:PartiQLSelect",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
+          "logs:StartQuery",
+          "cognito-idp:ListUsers",
+          "cognito-idp:AdminGetUser",
         ]
         Resource = "*"
       },
       {
+        # GetObjectVersion is a separate action: a GET that names a version id,
+        # including "null" on an unversioned bucket, is authorised against it
+        # and not against GetObject, so denying only GetObject leaves a way in.
         Sid         = "DenyObjectReadsOutsideState"
         Effect      = "Deny"
-        Action      = ["s3:GetObject"]
+        Action      = ["s3:GetObject", "s3:GetObjectVersion"]
         NotResource = "arn:aws:s3:::${var.state_bucket}/*"
       },
     ]
