@@ -25,6 +25,7 @@ locals {
 # correction: HTTP API was recommended first, on a cost argument whose absolute
 # figure turned out to be nil.
 resource "aws_api_gateway_rest_api" "api" {
+  #checkov:skip=CKV_AWS_237:Replacing the API changes its invoke URL, and the dev estate is destroyed and recreated by hand, so zero-downtime replacement is not a goal
   name        = local.api_name
   description = "WildLens API. Every route sits behind the Cognito authoriser."
 
@@ -98,6 +99,7 @@ resource "aws_api_gateway_authorizer" "cognito" {
 # --- Methods and integrations ------------------------------------------------
 
 resource "aws_api_gateway_method" "route" {
+  #checkov:skip=CKV2_AWS_53:The Lambda handlers validate their own inputs and return structured errors; gateway-level request validation would duplicate that
   for_each = var.routes
 
   rest_api_id   = aws_api_gateway_rest_api.api.id
@@ -159,6 +161,7 @@ resource "aws_lambda_permission" "invoke" {
 # backend.
 
 resource "aws_api_gateway_method" "options" {
+  #checkov:skip=CKV2_AWS_53:The Lambda handlers validate their own inputs and return structured errors; gateway-level request validation would duplicate that
   for_each = local.cors_resource_ids
 
   rest_api_id = aws_api_gateway_rest_api.api.id
@@ -261,6 +264,12 @@ resource "aws_api_gateway_deployment" "api" {
 }
 
 resource "aws_api_gateway_stage" "stage" {
+  #checkov:skip=CKV2_AWS_29:No WAF: a web ACL costs about $5 a month plus per-request fees, out of proportion for a single-user dev estate under a $100 credit budget, and every route already sits behind a Cognito authoriser
+  #checkov:skip=CKV2_AWS_4:Execution logging is configured in Phase 9 together with tracing and the dashboard
+  #checkov:skip=CKV2_AWS_51:Client certificates authenticate API Gateway to an HTTP backend; the backends here are Lambda functions called through IAM, so there is nothing to present one to
+  #checkov:skip=CKV_AWS_120:Gateway caching is billed per hour by cache size, and responses are per-user and low volume
+  #checkov:skip=CKV_AWS_73:API Gateway X-Ray tracing is enabled in Phase 9
+  #checkov:skip=CKV_AWS_76:Access logging is configured in Phase 9 together with tracing and the dashboard
   rest_api_id   = aws_api_gateway_rest_api.api.id
   deployment_id = aws_api_gateway_deployment.api.id
   stage_name    = var.stage_name
