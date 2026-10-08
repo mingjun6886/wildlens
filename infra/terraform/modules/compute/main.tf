@@ -108,10 +108,10 @@ resource "aws_cloudwatch_log_group" "process" {
 # --- Function --------------------------------------------------------------
 
 resource "aws_lambda_function" "process" {
-  #checkov:skip=CKV_AWS_115:No reservation on the function: AWS requires 100 unreserved executions account-wide and a new account has 10 in total. The ceiling for process is set on the event source mapping instead (modules/compute)
+  #checkov:skip=CKV_AWS_115:No function reserves concurrency: AWS requires 100 unreserved executions account-wide and a new account has 10 in total. process is capped on its event source mapping instead (modules/compute); the API functions are not capped
   #checkov:skip=CKV_AWS_116:A Lambda dead-letter config only applies to asynchronous invocations. The API functions are invoked synchronously and process is driven by SQS, whose own dead-letter queue handles failures (ADR 1)
   #checkov:skip=CKV_AWS_117:Deliberately outside a VPC: egress would need a NAT gateway at about $32 a month for no benefit, since every service called is a public endpoint already gated by IAM (design document AD-5)
-  #checkov:skip=CKV_AWS_173:The environment holds resource names and one origin, no secrets, so the default AWS-managed key is sufficient
+  #checkov:skip=CKV_AWS_173:The environment holds resource names (and, for the API functions, one allowed origin), no secrets, so the default AWS-managed key is sufficient
   #checkov:skip=CKV_AWS_272:Code signing needs a signing profile and a managed release pipeline; this function is built and deployed by its single owner
   #checkov:skip=CKV_AWS_50:Lambda X-Ray tracing is enabled in Phase 9; correlation ids in the JSON logs cover diagnosis until then
   function_name = local.function_name

@@ -161,7 +161,7 @@ resource "aws_lambda_permission" "invoke" {
 # backend.
 
 resource "aws_api_gateway_method" "options" {
-  #checkov:skip=CKV2_AWS_53:The Lambda handlers validate their own inputs and return structured errors; gateway-level request validation would duplicate that
+  #checkov:skip=CKV2_AWS_53:OPTIONS is a mock integration that returns fixed headers and reads no input, so there is nothing to validate
   for_each = local.cors_resource_ids
 
   rest_api_id = aws_api_gateway_rest_api.api.id
@@ -264,7 +264,7 @@ resource "aws_api_gateway_deployment" "api" {
 }
 
 resource "aws_api_gateway_stage" "stage" {
-  #checkov:skip=CKV2_AWS_29:No WAF: a web ACL costs about $5 a month plus per-request fees, out of proportion for a single-user dev estate under a $100 credit budget, and every route already sits behind a Cognito authoriser
+  #checkov:skip=CKV2_AWS_29:No WAF: a web ACL costs about $5 a month plus per-request fees, out of proportion for a single-user dev estate under a $100 credit budget. API routes other than CORS preflight sit behind a Cognito authoriser, and the site serves only static files
   #checkov:skip=CKV2_AWS_4:Execution logging is configured in Phase 9 together with tracing and the dashboard
   #checkov:skip=CKV2_AWS_51:Client certificates authenticate API Gateway to an HTTP backend; the backends here are Lambda functions called through IAM, so there is nothing to present one to
   #checkov:skip=CKV_AWS_120:Gateway caching is billed per hour by cache size, and responses are per-user and low volume

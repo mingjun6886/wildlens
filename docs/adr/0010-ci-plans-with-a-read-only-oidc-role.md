@@ -17,8 +17,9 @@ that touch `infra/**`, assuming a role through GitHub's OIDC issuer.
 The role can read the account and the state and write nothing. Its trust policy
 accepts one subject, `repo:mingjun6886/wildlens:pull_request`, so a run on `main`,
 on a tag or in another repository is refused. Two explicit denies remove the
-ability to read uploaded objects and table rows, which `ReadOnlyAccess` would
-otherwise grant.
+ability to read uploaded objects (including by version id), table rows (including
+through PartiQL), application logs and the list of users, all of which
+`ReadOnlyAccess` would otherwise grant.
 
 | Considered | Why not |
 |---|---|
@@ -33,6 +34,11 @@ otherwise grant.
 role's trust condition and policies carry the safety. That is why the data-read
 denies exist even though `plan` never needs them.
 
+**The deny list is a list.** Anything `ReadOnlyAccess` grants that is not named
+is still readable, so the list needs another look whenever the estate gains a new
+store of user data. If a refresh under the role is ever denied one of these
+actions, `plan` fails visibly rather than quietly.
+
 **`plan` cannot take the state lock.** The role has no write access, so the
 workflow plans with `-lock=false`. For one maintainer that is acceptable.
 
@@ -46,7 +52,7 @@ and ARNs, not secret values, since Terraform redacts sensitive attributes.
 
 **Every checkov finding was skipped, none fixed.** The first run reported 45
 findings across 14 resources. Fixing any of them would change real infrastructure,
-and this phase changes none. Each skip sits on its resource with its reason. Two
-of the reasons name follow-ups that are free and in place: explicit SQS encryption
-and aborting incomplete multipart uploads. Several others point at Phase 9, whose
-tracing and logging will let those skips be removed.
+and this phase changes none. Each skip sits on its resource with its reason. One
+reason names a follow-up that is free and in place: explicit SQS encryption.
+Several others point at Phase 9, whose tracing and logging will let those skips be
+removed.
