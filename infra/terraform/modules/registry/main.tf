@@ -1,4 +1,6 @@
 resource "aws_ecr_repository" "process" {
+  #checkov:skip=CKV_AWS_136:Encrypted with the default AES256; a customer-managed key costs $1 a month and the image holds no secrets
+  #checkov:skip=CKV_AWS_51:Tags are mutable on purpose: scripts/build-and-push.sh pushes the tag latest by default, and the Lambda is pointed at it
   name = "${var.name_prefix}-process"
 
   # Scan each pushed image for known CVEs in its OS packages. Free, and the
