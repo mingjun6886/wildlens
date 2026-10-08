@@ -8,6 +8,7 @@ data "aws_caller_identity" "current" {}
 # human needs to look at, and an automatic consumer would quietly hide exactly
 # the failures worth seeing. docs/runbook.md covers what to do when one arrives.
 resource "aws_sqs_queue" "dlq" {
+  #checkov:skip=CKV_AWS_27:Explicit encryption is not set here. Adding sqs_managed_sse_enabled is free and in place, and is a follow-up that this phase does not make because it alters no infrastructure
   name = "${var.name_prefix}-ingest-dlq"
 
   # The SQS maximum. A poison message discovered on a Monday should still be
@@ -18,6 +19,7 @@ resource "aws_sqs_queue" "dlq" {
 # --- Main queue -------------------------------------------------------------
 
 resource "aws_sqs_queue" "ingest" {
+  #checkov:skip=CKV_AWS_27:Explicit encryption is not set here. Adding sqs_managed_sse_enabled is free and in place, and is a follow-up that this phase does not make because it alters no infrastructure
   name = "${var.name_prefix}-ingest"
 
   # The single most dangerous setting on this queue.

@@ -1,0 +1,88 @@
+# Everything `make check` runs, plus the web build and Terraform validation.
+#
+# This workflow holds no credentials and requests no permissions beyond reading
+# the repository, so it is safe on pull requests from forks. The read-only plan
+# that does need AWS lives in plan.yml, which is why that file exists separately:
+# a `paths` filter here would also switch this job off.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            ml/requirements.txt
+
+      - name: Install Python dependencies
+        # ml/tests/test_tagger.py imports torch and PIL, so the unit tests need
+        # them. They do not need megadetector, which only model_loader.py
+        # imports and no test covers. The CPU build of torch is a few hundred
+        # megabytes rather than the gigabytes of the default Linux wheel.
+        # Versions match ml/requirements.txt.
+        run: |
+          pip install -r requirements-dev.txt
+          pip install pillow==12.3.0 numpy==2.4.6
+          pip install torch==2.14.0 torchvision==0.29.0 \
+            --index-url https://download.pytorch.org/whl/cpu
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Lint
+        run: make lint
+
+      - name: Python tests
+        run: make test
+
+      - name: Web tests
+        run: make test-web
+
+      - name: Web build
+        run: make build-web
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.14.x
+
+      - name: Terraform format
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: Terraform validate
+        # -backend=false: validation needs the provider schemas, not the state,
+        # so no AWS access is involved.
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+        working-directory: infra/terraform/envs/dev
+
+      - name: checkov
+        run: |
+          pip install checkov==3.3.26
+          checkov -d infra/terraform --framework terraform --quiet --compact
