@@ -1,6 +1,7 @@
-# ML runtime dependencies. Kept separate from requirements-dev.txt so that CI,
-# which only lints and runs mocked unit tests, never downloads two gigabytes of
-# PyTorch to do work that does not need it.
+# ML runtime dependencies. Kept separate from requirements-dev.txt so that CI
+# never installs megadetector or the full Linux PyTorch wheel. The mocked unit
+# tests do import torch and PIL, so ci.yml installs the CPU build of torch at the
+# versions pinned here, and nothing else from this file.
 #
 # These versions are what the local macOS arm64 environment resolved to. The
 # Lambda container targets linux/amd64 and will need its own resolution, but the

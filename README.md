@@ -18,7 +18,7 @@ the cost guardrails.
   realistic runaway costs about $4 instead of about $80.
 - **Measured, not asserted** — cold-start latency is benchmarked before and
   after optimisation, and model accuracy is scored against a 26-image answer
-  key on every change to the ML code.
+  key by `ml/eval/run_eval.py`, run by hand before changing the ML code.
 - **Operable** — structured JSON logs with a correlation ID, X-Ray tracing,
   a CloudWatch dashboard, alarms on DLQ depth, and a runbook.
 - **No long-lived secrets** — CI authenticates to AWS through OIDC federation.
@@ -70,7 +70,7 @@ Full design spec: [`docs/design/`](docs/design/) —
 goals, architecture decisions, data model, API contract, ML pipeline, error
 handling, observability, cost controls and build plan.
 
-Why it was built this way: [`docs/adr/`](docs/adr/) — eight decision records so
+Why it was built this way: [`docs/adr/`](docs/adr/) — ten decision records so
 far, written when each decision was taken rather than at the end. Three of them
 record a decision that was reversed by a measurement, which is kept rather than
 tidied away.

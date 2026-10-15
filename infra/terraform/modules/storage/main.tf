@@ -28,6 +28,11 @@ locals {
 }
 
 resource "aws_s3_bucket" "this" {
+  #checkov:skip=CKV2_AWS_62:Only the raw bucket publishes events, to the ingest queue (ADR 1); the other buckets have no consumer
+  #checkov:skip=CKV_AWS_144:Single-region by design; replication would double the storage cost
+  #checkov:skip=CKV_AWS_145:Encrypted with S3-managed keys (SSE-S3); a customer-managed key costs $1 a month and every role touching the bucket would then need KMS permissions
+  #checkov:skip=CKV_AWS_18:Access logging needs a dedicated log bucket and its storage cost, which is out of proportion for the dev estate
+  #checkov:skip=CKV_AWS_21:Versioning is left off to avoid paying for old versions. In the raw bucket keys come from the content digest (ADR 6), so an object is not overwritten with different content; the web bucket is rebuilt from source on every deploy
   for_each = local.buckets
 
   bucket = "${var.name_prefix}-${each.key}-${var.suffix}"
@@ -62,6 +67,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "this" {
+  #checkov:skip=CKV_AWS_300:Nothing to add: the abort-incomplete-multipart-uploads rule below already applies to every bucket, and checkov still flags the resource
   for_each = local.buckets
 
   bucket = aws_s3_bucket.this[each.key].id

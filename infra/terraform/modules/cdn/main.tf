@@ -50,6 +50,14 @@ resource "aws_s3_bucket_policy" "web" {
 # --- Distribution ------------------------------------------------------------
 
 resource "aws_cloudfront_distribution" "site" {
+  #checkov:skip=CKV2_AWS_32:Security headers are set by the page itself through a Content-Security-Policy meta tag (ADR 9), not by a CloudFront response headers policy
+  #checkov:skip=CKV2_AWS_42:No custom domain: the distribution serves the default cloudfront.net certificate, and a custom certificate would need an ACM certificate in us-east-1
+  #checkov:skip=CKV2_AWS_47:Applies to a web ACL, and this distribution has none (see CKV_AWS_68)
+  #checkov:skip=CKV_AWS_174:CloudFront ignores the minimum protocol version when the default cloudfront.net certificate is used, so it cannot be set without a custom domain
+  #checkov:skip=CKV_AWS_310:There is one origin per behaviour and no secondary origin to fail over to
+  #checkov:skip=CKV_AWS_374:Users are not restricted to a geography
+  #checkov:skip=CKV_AWS_68:No WAF: a web ACL costs about $5 a month plus per-request fees, out of proportion for a single-user dev estate under a $100 credit budget. API routes other than CORS preflight sit behind a Cognito authoriser, and the site serves only static files
+  #checkov:skip=CKV_AWS_86:Access logging needs a dedicated log bucket and its storage cost, which is out of proportion for the dev estate
   enabled             = true
   comment             = "${var.name_prefix} site and API"
   default_root_object = "index.html"
