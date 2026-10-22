@@ -16,7 +16,7 @@ make lint         # ruff check .
 make fmt          # ruff format . && ruff check --fix .
 make test         # pytest -m "not integration" (models mocked, no AWS)
 make test-web     # node --test web/src/*.test.mjs (no browser, no npm install needed)
-make build-web    # vite build; also the only check that web imports resolve
+make build-web    # vite build; also the only check that web imports resolve (run `npm ci` in web/ first)
 
 pytest services/api/tests/test_search.py::test_name   # single Python test
 node --test web/src/hash.test.mjs                     # single web test file
