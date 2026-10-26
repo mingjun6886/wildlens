@@ -60,3 +60,17 @@ variable "routes" {
     function_name = string
   }))
 }
+
+variable "route_throttles" {
+  description = <<-EOT
+    Per-route rate limits, keyed like `routes`. Routes absent here use the account
+    default (10,000 requests a second), which is far above what any route here
+    needs. /subscribe is limited because it can make SNS send mail to an address
+    the caller does not own.
+  EOT
+  type = map(object({
+    rate  = number
+    burst = number
+  }))
+  default = {}
+}
