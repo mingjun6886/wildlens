@@ -282,6 +282,7 @@ resource "aws_api_gateway_stage" "stage" {
 }
 
 resource "aws_api_gateway_method_settings" "throttle" {
+  #checkov:skip=CKV_AWS_225:These settings exist only to set a rate limit. Gateway caching is billed per hour by cache size, and responses are per-user and low volume (same reason as CKV_AWS_120 on the stage)
   for_each = var.route_throttles
 
   rest_api_id = aws_api_gateway_rest_api.api.id
