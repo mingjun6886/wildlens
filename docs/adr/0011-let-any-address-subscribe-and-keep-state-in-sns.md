@@ -23,7 +23,9 @@ can always unsubscribe with the link SNS puts in every email.
 
 **The response is shortened.** `{ok, status, tag, min}` replaces the design's
 `{ok, tags}`, because returning the address's whole subscription would let any
-user read what a stranger follows.
+user read what a stranger follows. `min` is the value the caller sent, not the
+stored one: the stored threshold can be lower, and echoing it would let anyone read
+it with one add and restore the state with one remove.
 
 **SNS holds all the state.** One subscription per address; its filter policy,
 applied to the message body, is the subscription. Several species are ORed with a
@@ -44,9 +46,16 @@ would be lost anyway while a correctly tagged file was reported as failed.
 
 ## Consequences
 
-**A pending address cannot be changed.** SNS does not allow editing a subscription
-until its address confirms, so adding or removing a species for such an address is
-a `409 pending_confirmation` that sends the confirmation mail again.
+**A pending address cannot be changed, and is not mailed again.** SNS does not allow
+editing a subscription until its address confirms, so adding or removing a species
+for such an address is a `409 pending_confirmation` and nothing more. A resend was
+in the first design and was dropped after review: the route's throttle is shared by
+all callers, so it could not stop one user sending a stranger about 86,000
+confirmation mails a day. The price is that a lost confirmation mail has no
+self-service resend; it waits for the pending subscription to expire, or the owner
+removes it (runbook). A signed-in user can also fill the 200 slots with pending
+addresses in minutes, and new addresses then get `limit_reached` until those expire.
+The limits bound the damage; they do not prevent it.
 
 **The email body is the JSON message.** The filter reads the body, so the body has
 to be the JSON. A friendlier text would need `MessageStructure=json`, whose
@@ -67,5 +76,6 @@ of `dingo >= 3` OR `koala >= 1` delivered `{"dingo": 3}` and `{"koala": 1}` and
 dropped `{"dingo": 2}` and `{"emu": 9}`. A plain one-clause policy was accepted,
 and a confirmed subscription's policy could be replaced with
 `SetSubscriptionAttributes`. Not yet checked, because it needs a real address to
-send a confirmation to: what `Subscribe` does when called again for a pending
-address, and whether a pending subscription can be unsubscribed.
+send a confirmation to: whether a pending subscription can be unsubscribed. What
+`Subscribe` does when called again for a pending address no longer matters,
+because nothing calls it again.

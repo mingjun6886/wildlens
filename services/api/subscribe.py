@@ -6,8 +6,8 @@ to be reconciled with SNS, which does not tell us when an address confirms.
 
 The consequence is the pending case. SNS will not change the attributes of a
 subscription that has not been confirmed, so adding or removing a species for such
-an address is a 409 that sends the confirmation mail again. The first add carries
-its policy in the Subscribe call itself, which is the only moment it can be set.
+an address is a 409 and nothing else. The first add carries its policy in the
+Subscribe call itself, which is the only moment it can be set.
 
 Any signed-in user may name any address (docs/adr/0011). The limits below and the
 shortened response are what keep that from being a probe or a mail cannon: the
@@ -103,16 +103,20 @@ def _wanted(arn: str) -> dict[str, int]:
     return notify_policy.parse_policy(json.loads(attributes["FilterPolicy"]))
 
 
-def _pending(email: str, cid: str):
-    """Send the confirmation mail again and refuse the change.
+def _pending(cid: str):
+    """Refuse the change. Sends nothing.
 
-    No attributes are passed: a pending subscription's cannot be read, and SNS
-    rejects a Subscribe whose attributes differ from the stored ones.
+    A resend of the confirmation mail was in the first design and was removed after
+    review: each one is a mail to an address the caller may not own, the route's
+    throttle is shared by every caller rather than applied per caller, so it cannot
+    bound how many one person sends to one stranger. Without it a pending address is
+    mailed once, by the Subscribe that created it. Re-subscribing with different
+    casing could also have created a second, unfiltered subscription.
     """
-    sns.subscribe(TopicArn=TOPIC_ARN, Protocol="email", Endpoint=email)
-    log_event("subscription pending, confirmation resent", cid)
+    log_event("subscription pending, change refused", cid)
     raise ClientError(
-        409, "pending_confirmation: confirm through the email SNS sent, then try again"
+        409,
+        "pending_confirmation: confirm through the email SNS already sent, then try again",
     )
 
 
@@ -136,7 +140,7 @@ def _add(email: str, tag: str, minimum: int, cid: str) -> dict:
 
     arn = subscription["SubscriptionArn"]
     if arn == PENDING:
-        _pending(email, cid)
+        _pending(cid)
 
     wanted = _wanted(arn)
     if tag not in wanted and len(wanted) >= MAX_SPECIES:
@@ -148,7 +152,10 @@ def _add(email: str, tag: str, minimum: int, cid: str) -> dict:
         AttributeValue=json.dumps(notify_policy.build_policy(merged)),
     )
     log_event("species added", cid, tag=tag, minimum=minimum)
-    return {"ok": True, "status": "confirmed", "tag": tag, "min": merged[tag]}
+    # The caller's own value, not merged[tag]. The stored threshold may be lower, and
+    # echoing it would let anyone read it off the response: add min=1000000, see what
+    # comes back, then remove to restore the state. See docs/adr/0011.
+    return {"ok": True, "status": "confirmed", "tag": tag, "min": minimum}
 
 
 def _remove(email: str, tag: str, cid: str) -> dict:
@@ -158,7 +165,7 @@ def _remove(email: str, tag: str, cid: str) -> dict:
 
     arn = subscription["SubscriptionArn"]
     if arn == PENDING:
-        _pending(email, cid)
+        _pending(cid)
 
     wanted = _wanted(arn)
     if tag in wanted:

@@ -423,8 +423,10 @@ aws sns list-subscriptions-by-topic --topic-arn "$TOPIC" \
   --query 'Subscriptions[].[Endpoint,SubscriptionArn]' --output table
 ```
 
-Calling `POST /subscribe` for that address again sends the confirmation mail once
-more.
+The API will not send the confirmation mail again: `POST /subscribe` for a pending
+address is a `409`. A lost mail waits for the pending subscription to expire, or you
+remove it with step 3 (use the Endpoint from the table) and the person subscribes
+again.
 
 **3. Remove a subscription by hand.** A confirmed one:
 

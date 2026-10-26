@@ -143,14 +143,22 @@ def test_add_to_a_confirmed_address_merges_and_keeps_the_lower_threshold(sns):
     assert policy_of(sns, arn) == {"dingo": 1, "red fox": 1}
 
 
-def test_pending_add_is_409(sns):
+def test_pending_add_is_409_and_sends_no_mail(sns):
     sns.seed("a@example.com", {}, confirmed=False)
     status, body = add()
     assert status == 409
     assert body["error"].startswith("pending_confirmation")
-    # The confirmation mail is sent again.
-    assert [name for name, *_ in sns.calls] == ["subscribe"]
-    assert "Attributes" not in sns.calls[0][1]
+    # Not even a resend: every resend is a mail to an address the caller may not own,
+    # and the route's throttle is shared by all callers, so it cannot bound that.
+    assert sns.calls == []
+
+
+def test_repeating_a_pending_request_never_mails_again(sns):
+    sns.seed("a@example.com", {}, confirmed=False)
+    for _ in range(5):
+        assert add()[0] == 409
+        assert add(email="A@Example.com")[0] == 409
+    assert sns.calls == []
 
 
 def test_email_match_ignores_case(sns):
@@ -217,9 +225,10 @@ def test_remove_of_a_species_not_followed_changes_nothing(sns):
     assert [c for c in sns.calls if c[0] in ("set", "unsubscribe")] == []
 
 
-def test_pending_remove_is_409(sns):
+def test_pending_remove_is_409_and_sends_no_mail(sns):
     sns.seed("a@example.com", {}, confirmed=False)
     assert remove()[0] == 409
+    assert sns.calls == []
 
 
 # --- validation --------------------------------------------------------------
@@ -266,6 +275,15 @@ def test_sns_failure_is_a_502_with_a_generic_message(sns):
     status, body = add()
     assert status == 502
     assert "boom" not in json.dumps(body)
+
+
+def test_the_response_echoes_the_request_not_the_stored_threshold(sns):
+    # Otherwise add min=1000000 followed by remove reads a stranger's threshold off
+    # the response and then restores their state exactly.
+    arn = sns.seed("a@example.com", {"dingo": 1})
+    status, body = add(minimum=1000)
+    assert (status, body["min"]) == (200, 1000)
+    assert policy_of(sns, arn) == {"dingo": 1}
 
 
 def test_the_response_never_reveals_other_species(sns):
