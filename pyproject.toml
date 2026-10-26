@@ -24,8 +24,11 @@ known-first-party = [
   "common",
   "media_utils",
   "model_loader",
+  "notify",
+  "notify_policy",
   "search",
   "status",
+  "subscribe",
   "tagger",
   "upload",
 ]
