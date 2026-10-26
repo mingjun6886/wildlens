@@ -127,16 +127,16 @@ These are the mitigations for D1. Anyone signed in can cause SNS to send a confi
 
 ---
 
-## 5. Open questions to settle by experiment
+## 5. Behaviours of SNS checked against the real service
 
-These are behaviours of SNS that are remembered rather than verified. The integration test (section 6) settles each against real AWS, and the measured results go into ADR 11.
+These were remembered rather than verified when the design was written. `services/api/tests/test_sns_behaviour.py` pins each of them; the results below are from 2026-10-26 in `ap-southeast-2`.
 
-1. Does a `$or` with a single element validate, or must a one-species policy be written without `$or`?
-2. Does calling `Subscribe` again for a pending address resend the confirmation email, and does it error when the attributes differ?
-3. Does the `numeric` operator match against a number nested inside a JSON message body, as section 4.2 assumes?
-4. Can `Unsubscribe` be called on a pending subscription?
+1. **Single-element `$or`.** Not tested. A one-species policy is written without `$or` (`notify_policy.build_policy`), so the question no longer matters. A plain single-clause policy was accepted and read back unchanged.
+2. **Re-subscribing a pending address.** *Not yet verified.* The test needs an address to send a confirmation mail to (`WILDLENS_TEST_EMAIL`), and none was supplied. Until it runs, the pending flow in section 4.3 rests on the documented behaviour of SNS.
+3. **`numeric` against a number inside a JSON body.** Confirmed. With `FilterPolicyScope=MessageBody`, a policy of `dingo >= 3` OR `koala >= 1` delivered `{"dingo": 3}` and `{"koala": 1}`, and dropped `{"dingo": 2}` and `{"emu": 9}`.
+4. **Unsubscribing a pending subscription.** *Not yet verified*, for the same reason as 2.
 
-If an answer differs from the assumption, section 4.3 changes and this document is revised before the plan.
+Replacing the filter policy of a confirmed subscription with `SetSubscriptionAttributes` was confirmed. If an answer differs from the assumption, section 4.3 changes and this document is revised.
 
 ---
 
