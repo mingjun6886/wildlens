@@ -3,8 +3,8 @@ variable "name_prefix" {
   type        = string
 }
 
-variable "github_repository" {
-  description = "GitHub owner/repo, e.g. mingjun6886/wildlens. Only its pull requests can assume the role."
+variable "github_subject_prefix" {
+  description = "The `sub` claim prefix GitHub issues for this repository, without the event suffix. Only its pull requests can assume the role."
   type        = string
 }
 
