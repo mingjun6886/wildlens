@@ -130,5 +130,6 @@ COPY ml/labels.txt  ${LAMBDA_TASK_ROOT}/
 COPY services/process/app.py          ${LAMBDA_TASK_ROOT}/
 COPY services/process/model_loader.py ${LAMBDA_TASK_ROOT}/
 COPY services/process/media_utils.py  ${LAMBDA_TASK_ROOT}/
+COPY services/process/notify.py       ${LAMBDA_TASK_ROOT}/
 
 CMD ["app.handler"]
