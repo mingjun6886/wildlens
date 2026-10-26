@@ -99,3 +99,7 @@ output "plan_role_arn" {
   description = "Set the GitHub repository variable AWS_PLAN_ROLE_ARN to this value."
   value       = module.ci.plan_role_arn
 }
+
+output "tags_topic_arn" {
+  value = module.notify.topic_arn
+}

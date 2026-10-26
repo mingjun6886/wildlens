@@ -280,3 +280,18 @@ resource "aws_api_gateway_stage" "stage" {
   # a resource that does not belong to one API's module, and one whose destruction
   # would silently disable logging for anything else using it.
 }
+
+resource "aws_api_gateway_method_settings" "throttle" {
+  for_each = var.route_throttles
+
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  stage_name  = aws_api_gateway_stage.stage.stage_name
+
+  # "subscribe/POST": the resource path with slashes kept, then the method.
+  method_path = "${var.routes[each.key].resource_key}/${var.routes[each.key].http_method}"
+
+  settings {
+    throttling_rate_limit  = each.value.rate
+    throttling_burst_limit = each.value.burst
+  }
+}

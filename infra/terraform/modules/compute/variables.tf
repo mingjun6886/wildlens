@@ -112,3 +112,8 @@ variable "max_queue_concurrency" {
     error_message = "AWS requires a maximum_concurrency of at least 2 on an event source mapping."
   }
 }
+
+variable "tags_topic_arn" {
+  description = "Topic process publishes to when a file reaches DONE. Publish only."
+  type        = string
+}

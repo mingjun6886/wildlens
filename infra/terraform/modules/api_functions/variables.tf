@@ -56,3 +56,8 @@ variable "process_function_name" {
   description = "Same function, by name: what the Invoke call takes."
   type        = string
 }
+
+variable "tags_topic_arn" {
+  description = "The topic the subscribe function manages subscriptions on."
+  type        = string
+}
