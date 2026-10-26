@@ -15,7 +15,8 @@ beyond reading the repository. `plan.yml` runs `terraform plan` on pull requests
 that touch `infra/**`, assuming a role through GitHub's OIDC issuer.
 
 The role can read the account and the state and write nothing. Its trust policy
-accepts one subject, `repo:mingjun6886/wildlens:pull_request`, so a run on `main`,
+accepts one subject, `repo:mingjun6886@277076050/wildlens@1380902928:pull_request`
+(GitHub's immutable form, with the owner and repository IDs), so a run on `main`,
 on a tag or in another repository is refused. Two explicit denies remove the
 ability to read uploaded objects (including by version id), table rows (including
 through PartiQL), application logs and the list of users, all of which
