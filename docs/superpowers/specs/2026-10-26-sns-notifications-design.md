@@ -1,7 +1,7 @@
 # Phase 8 — Tag notifications through SNS
 
 **Date:** 2026-10-26
-**Status:** Draft, awaiting review
+**Status:** Approved; implementation in progress
 **Scope:** `services/process/`, `services/api/` (new `subscribe` function), `infra/terraform/modules/notify` (new), `infra/terraform/modules/api_functions`, `infra/terraform/modules/api`, `infra/terraform/modules/compute`, documentation
 
 ---
@@ -56,7 +56,7 @@ JSON body:
 {"fileId": "<sha256>", "tags": {"dingo": 3, "koala": 1}}
 ```
 
-The published email is plain text: the file id and the species with counts. There is no image link, because the thumbnail bucket is private and a presigned URL would expire inside an email that may be read days later.
+The email body is the JSON message itself, pretty-printed, because subscribers' filters read the body. A friendlier body needs `MessageStructure=json`, whose interaction with body-scope filters is unverified. The subject is `WildLens: new sighting`. There is no image link, because the thumbnail bucket is private and a presigned URL would expire inside an email that may be read days later.
 
 ### 3.3 Failure behaviour
 
@@ -79,7 +79,7 @@ Request: `{email, tag, min, operation}`
 - `operation` is `"add"` or `"remove"`.
 - `min` is an integer from 1 upward and is required for `add`.
 
-Response: `{ok, status, tag, min}` where `status` is `"pending"` (the address has not confirmed) or `"confirmed"`.
+Response for `add`: `{ok, status, tag, min}` where `status` is `"pending"` (the address has not confirmed) or `"confirmed"`. For `remove`: `{ok, status, tag}` with `status` `"confirmed"`, or `"none"` when the address was not subscribed; there is no `min`.
 
 The design document returned `{ok, tags}`, the address's whole subscription. Because D1 lets any signed-in user name any address, that would let anyone probe which species a stranger follows. The response therefore echoes only the species just changed. ADR 11 records the deviation.
 
@@ -113,7 +113,7 @@ The function finds the address's subscription by paging through `list_subscripti
 These are the mitigations for D1. Anyone signed in can cause SNS to send a confirmation email to a stranger, and can add or remove species on another person's address. A recipient can always unsubscribe with the link SNS puts in every email.
 
 - Email: a valid address, at most 254 characters.
-- `tag` must be in `ml/labels.txt`, so no one can invent a species.
+- `tag` must be in `services/api/species.txt`, a copy of the common names in `ml/labels.txt` kept equal by a test, because the API artefact cannot see `ml/`. No one can invent a species.
 - At most 20 species per address, and at most 200 subscriptions on the topic. The second limit also bounds the cost of paging through the subscription list.
 - A throttle on the `/subscribe` route in API Gateway lower than on the other routes.
 

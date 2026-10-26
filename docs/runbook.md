@@ -396,6 +396,50 @@ Needs the dashboard.
 
 ---
 
+## Notifications are not arriving
+
+**Symptom:** a file was tagged and an address that follows one of its species got no
+email.
+
+**1. Was the publish attempted and did it fail?** It is logged, and the file stays
+`DONE` either way.
+
+```bash
+aws logs start-query --log-group-name /aws/lambda/wildlens-dev-process \
+  --start-time $(( $(date +%s) - 86400 )) --end-time $(date +%s) \
+  --query-string 'fields @timestamp, @message | filter @message like /notification not sent/ | sort @timestamp desc'
+```
+
+There is no retry. A lost notification is not recovered; the next matching file
+notifies again.
+
+**2. Is the address stuck at pending?** The subscriber has to click the link in the
+confirmation mail first. A `PendingConfirmation` row means they have not.
+
+```bash
+export AWS_PROFILE=wildlens
+TOPIC="$(terraform -chdir=infra/terraform/envs/dev output -raw tags_topic_arn)"
+aws sns list-subscriptions-by-topic --topic-arn "$TOPIC" \
+  --query 'Subscriptions[].[Endpoint,SubscriptionArn]' --output table
+```
+
+Calling `POST /subscribe` for that address again sends the confirmation mail once
+more.
+
+**3. Remove a subscription by hand.** A confirmed one:
+
+```bash
+aws sns unsubscribe --subscription-arn <the ARN from step 2>
+```
+
+**4. Check the whole path by hand after a change.** Subscribe your own address to a
+species at a minimum of 1, confirm through the email, upload an image that contains
+it and expect one email whose body is the JSON message. Upload an image without it
+and expect none. Upload the first image again and expect none. Then remove the
+species and check the subscription is gone from step 2.
+
+---
+
 ## Bootstrapping CI
 
 **When:** once, and again only if the role is destroyed and recreated.
