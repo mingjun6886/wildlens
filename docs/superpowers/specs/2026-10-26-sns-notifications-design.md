@@ -79,7 +79,7 @@ Request: `{email, tag, min, operation}`
 - `operation` is `"add"` or `"remove"`.
 - `min` is an integer from 1 upward and is required for `add`.
 
-Response for `add`: `{ok, status, tag, min}` where `status` is `"pending"` (the address has not confirmed) or `"confirmed"`. For `remove`: `{ok, status, tag}` with `status` `"confirmed"`, or `"none"` when the address was not subscribed; there is no `min`.
+Response for `add`: `{ok, status, tag, min}` where `min` is the value the caller sent, never the stored one (echoing the stored threshold would let anyone read it off the response), and `status` is `"pending"` (the address has not confirmed) or `"confirmed"`. For `remove`: `{ok, status, tag}` with `status` `"confirmed"`, or `"none"` when the address was not subscribed; there is no `min`.
 
 The design document returned `{ok, tags}`, the address's whole subscription. Because D1 lets any signed-in user name any address, that would let anyone probe which species a stranger follows. The response therefore echoes only the species just changed. ADR 11 records the deviation.
 
@@ -106,7 +106,7 @@ The function finds the address's subscription by paging through `list_subscripti
 | Confirmed, `add` | Read the attributes, merge, `SetSubscriptionAttributes`. Status `confirmed` |
 | Confirmed, `remove` | Remove the species. If it was the last one, `Unsubscribe` |
 | No subscription, `remove` | `ok` with no change. Removing something that is not there is not an error |
-| Pending, `add` or `remove` | `409 pending_confirmation`, the message says to confirm through the email, and the confirmation email is sent again. SNS does not allow changing attributes of an unconfirmed subscription |
+| Pending, `add` or `remove` | `409 pending_confirmation`; the message says to confirm through the email already sent. Nothing is sent again: a resend is a mail to an address the caller may not own, and the route throttle is shared by all callers, so it cannot bound how many one person sends to one stranger. SNS does not allow changing attributes of an unconfirmed subscription |
 
 ### 4.4 Validation and limits
 
@@ -132,7 +132,7 @@ These are the mitigations for D1. Anyone signed in can cause SNS to send a confi
 These were remembered rather than verified when the design was written. `services/api/tests/test_sns_behaviour.py` pins each of them; the results below are from 2026-10-26 in `ap-southeast-2`.
 
 1. **Single-element `$or`.** Not tested. A one-species policy is written without `$or` (`notify_policy.build_policy`), so the question no longer matters. A plain single-clause policy was accepted and read back unchanged.
-2. **Re-subscribing a pending address.** *Not yet verified.* The test needs an address to send a confirmation mail to (`WILDLENS_TEST_EMAIL`), and none was supplied. Until it runs, the pending flow in section 4.3 rests on the documented behaviour of SNS.
+2. **Re-subscribing a pending address.** No longer relied on: the pending flow never calls `Subscribe` again. The test stays for the day a resend is wanted; it needs `WILDLENS_TEST_EMAIL`, and none was supplied.
 3. **`numeric` against a number inside a JSON body.** Confirmed. With `FilterPolicyScope=MessageBody`, a policy of `dingo >= 3` OR `koala >= 1` delivered `{"dingo": 3}` and `{"koala": 1}`, and dropped `{"dingo": 2}` and `{"emu": 9}`.
 4. **Unsubscribing a pending subscription.** *Not yet verified*, for the same reason as 2.
 
