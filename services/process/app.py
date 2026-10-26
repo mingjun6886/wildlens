@@ -32,6 +32,7 @@ from PIL import Image, UnidentifiedImageError
 
 from media_utils import make_thumbnail
 from model_loader import artefact_bucket, artefact_version, get_models
+from notify import publish_tags
 from tagger import tag_image
 
 # True until the first invocation finishes. A warm invocation reuses the same
@@ -44,6 +45,7 @@ logger.setLevel(logging.INFO)
 
 s3 = boto3.client("s3")
 table = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
+sns = boto3.client("sns")
 
 TMP = Path("/tmp")  # noqa: S108 - the only writable path in a Lambda container
 
@@ -326,6 +328,11 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             processingMs=Decimal(int((time.time() - started) * 1000)),
             coldStart=cold_start,
         )
+        # After the record is written, not before: the tags are the product and the
+        # email is a side effect. publish_tags never raises, so a failure here
+        # cannot send the message back to SQS, where claim() would skip it as DONE
+        # and the notification would be lost regardless.
+        publish_tags(sns, os.environ.get("TAGS_TOPIC_ARN", ""), file_id, tags, correlation_id)
         return {"fileId": file_id, "tags": tags, "inferenceMs": inference_ms}
     finally:
         local_path.unlink(missing_ok=True)
