@@ -82,10 +82,14 @@ variable "api_stage" {
   default     = "v1"
 }
 
-variable "github_repository" {
-  description = "GitHub owner/repo whose pull requests may assume the read-only plan role."
+variable "github_subject_prefix" {
+  description = <<-EOT
+    The OIDC `sub` prefix GitHub issues for this repository, whose pull requests may assume
+    the read-only plan role. Read it with:
+    gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+  EOT
   type        = string
-  default     = "mingjun6886/wildlens"
+  default     = "repo:mingjun6886@277076050/wildlens@1380902928"
 }
 
 variable "state_bucket" {

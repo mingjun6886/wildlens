@@ -191,7 +191,7 @@ module "cdn" {
 module "ci" {
   source = "../../modules/ci"
 
-  name_prefix       = local.name_prefix
-  github_repository = var.github_repository
-  state_bucket      = var.state_bucket
+  name_prefix           = local.name_prefix
+  github_subject_prefix = var.github_subject_prefix
+  state_bucket          = var.state_bucket
 }

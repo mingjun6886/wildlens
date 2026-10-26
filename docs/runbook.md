@@ -425,8 +425,18 @@ aws iam get-role --role-name wildlens-dev-ci-plan \
   --query 'Role.AssumeRolePolicyDocument.Statement[0].Condition' --output json
 ```
 
-The `sub` condition must read `repo:mingjun6886/wildlens:pull_request` and nothing
-broader.
+The `sub` condition must read `<prefix>:pull_request` and nothing broader, where
+the prefix is what GitHub issues for this repository:
+
+```bash
+gh api repos/mingjun6886/wildlens/actions/oidc/customization/sub --jq .sub_claim_prefix
+```
+
+The repository uses immutable subjects, so the prefix carries the numeric owner and
+repository IDs (`repo:mingjun6886@277076050/wildlens@1380902928`) rather than the
+plain `repo:mingjun6886/wildlens`. A condition written with the plain name is
+accepted by IAM and then refuses every sign-in with `Not authorized to perform
+sts:AssumeRoleWithWebIdentity`, which is how this was found.
 
 ## The plan on a pull request lists everything as new
 

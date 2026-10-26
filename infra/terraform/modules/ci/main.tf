@@ -10,7 +10,9 @@ resource "aws_iam_role" "plan" {
 
   # Exactly one subject: a pull_request run of this repository. A run on main,
   # on a tag, or in any other repository presents a different `sub` and is
-  # refused. The workflow file can be edited by any branch, so this condition
+  # refused. The prefix carries the numeric owner and repository IDs because
+  # this repository uses immutable subjects; a plain owner/name condition was
+  # applied first and every sign-in was refused. The workflow file can be edited by any branch, so this condition
   # and the policies below are the real controls, not the workflow.
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -21,7 +23,7 @@ resource "aws_iam_role" "plan" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:pull_request"
+          "token.actions.githubusercontent.com:sub" = "${var.github_subject_prefix}:pull_request"
         }
       }
     }]
