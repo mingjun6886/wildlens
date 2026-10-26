@@ -79,6 +79,15 @@ resource "aws_iam_role_policy" "process" {
         Resource = [var.table_arn]
       },
       {
+        # Publish only. This function announces a tagged file and has no business
+        # managing who is subscribed, so Subscribe and the attribute calls belong
+        # to the subscribe function alone.
+        Sid      = "AnnounceTaggedFiles"
+        Effect   = "Allow"
+        Action   = ["sns:Publish"]
+        Resource = [var.tags_topic_arn]
+      },
+      {
         # Write to its own log group only. CreateLogGroup is deliberately
         # absent: Terraform creates the group below, and a function that cannot
         # create log groups cannot create one with no retention policy.
@@ -142,6 +151,9 @@ resource "aws_lambda_function" "process" {
       THUMB_BUCKET  = var.thumb_bucket_name
       RAW_BUCKET    = var.raw_bucket_name
       TABLE_NAME    = var.table_name
+
+      # Read when a file reaches DONE; see services/process/notify.py.
+      TAGS_TOPIC_ARN = var.tags_topic_arn
     }
   }
 

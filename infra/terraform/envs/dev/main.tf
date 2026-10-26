@@ -63,6 +63,12 @@ module "queue" {
   raw_bucket_arn  = module.storage.bucket_arns["raw"]
 }
 
+module "notify" {
+  source = "../../modules/notify"
+
+  name_prefix = local.name_prefix
+}
+
 module "compute" {
   source = "../../modules/compute"
 
@@ -79,6 +85,8 @@ module "compute" {
   queue_arn  = module.queue.queue_arn
   table_arn  = module.database.table_arn
   table_name = module.database.table_name
+
+  tags_topic_arn = module.notify.topic_arn
 }
 
 module "auth" {
@@ -114,6 +122,8 @@ module "api_functions" {
   # it. Only one function in the estate carries the models.
   process_function_arn  = module.compute.function_arn
   process_function_name = module.compute.function_name
+
+  tags_topic_arn = module.notify.topic_arn
 }
 
 module "api" {
@@ -128,9 +138,16 @@ module "api" {
   # and CORS is keyed off the paths so that sharing cannot produce a duplicate
   # OPTIONS method.
   resources = {
-    files  = ["{fileId}"]
-    upload = []
-    search = ["tags", "species", "byfile"]
+    files     = ["{fileId}"]
+    upload    = []
+    search    = ["tags", "species", "byfile"]
+    subscribe = []
+  }
+
+  # 1 request a second with a burst of 5. /subscribe can make SNS email an address
+  # the caller does not own, so it is limited far below the other routes.
+  route_throttles = {
+    subscribe = { rate = 1, burst = 5 }
   }
 
   routes = {
@@ -166,6 +183,12 @@ module "api" {
       resource_key  = "search/byfile"
       invoke_arn    = module.api_functions.invoke_arns["search"]
       function_name = module.api_functions.function_names["search"]
+    }
+    subscribe = {
+      http_method   = "POST"
+      resource_key  = "subscribe"
+      invoke_arn    = module.api_functions.invoke_arns["subscribe"]
+      function_name = module.api_functions.function_names["subscribe"]
     }
   }
 }

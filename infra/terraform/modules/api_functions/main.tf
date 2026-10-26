@@ -63,6 +63,28 @@ locals {
       ]
     }
 
+    subscribe = {
+      handler     = "subscribe.handler"
+      description = "POST /subscribe - follow a species at a minimum count by email."
+      timeout     = 10
+      statements = [
+        {
+          # Exactly the five calls the handler makes, on the one topic. No Publish:
+          # this function manages who is listening and never speaks to them.
+          Sid    = "ManageSubscriptions"
+          Effect = "Allow"
+          Action = [
+            "sns:Subscribe",
+            "sns:Unsubscribe",
+            "sns:ListSubscriptionsByTopic",
+            "sns:GetSubscriptionAttributes",
+            "sns:SetSubscriptionAttributes",
+          ]
+          Resource = [var.tags_topic_arn]
+        },
+      ]
+    }
+
     search = {
       handler     = "search.handler"
       description = "POST /search/{tags,species,byfile} - scan, filter in memory, sign URLs."
@@ -230,6 +252,10 @@ resource "aws_lambda_function" "function" {
       # per function, because a shared zip means a shared environment block and
       # splitting it would buy nothing: a name is not a credential.
       PROCESS_FUNCTION = var.process_function_name
+
+      # Read by subscribe.py at import. Set for all functions for the same reason as
+      # PROCESS_FUNCTION: one zip means one environment, and an ARN is not a secret.
+      TAGS_TOPIC_ARN = var.tags_topic_arn
     }
   }
 

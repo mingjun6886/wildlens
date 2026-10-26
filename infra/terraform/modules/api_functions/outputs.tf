@@ -1,6 +1,6 @@
 output "invoke_arns" {
   description = <<-EOT
-    Keyed by short name: status, upload, search. These are invoke_arn values, which
+    Keyed by short name: status, upload, search, subscribe. These are invoke_arn values, which
     already carry the arn:aws:apigateway:...:lambda:path/.../invocations wrapper an
     API Gateway integration uri wants. Named invoke_arns rather than function_arns
     so that nothing downstream mistakes them for plain function ARNs and wraps them
