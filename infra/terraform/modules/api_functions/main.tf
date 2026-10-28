@@ -195,6 +195,13 @@ resource "aws_iam_role_policy" "function" {
           "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.name_prefix}-${each.key}:*"
         ]
       },
+      {
+        # "*" is the only resource X-Ray accepts for these two actions.
+        Sid      = "WriteTraces"
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = ["*"]
+      },
     ])
   })
 }
@@ -218,7 +225,6 @@ resource "aws_lambda_function" "function" {
   #checkov:skip=CKV_AWS_117:Deliberately outside a VPC: egress would need a NAT gateway at about $32 a month for no benefit, since every service called is a public endpoint already gated by IAM (design document AD-5)
   #checkov:skip=CKV_AWS_173:The environment holds resource names (and, for the API functions, one allowed origin), no secrets, so the default AWS-managed key is sufficient
   #checkov:skip=CKV_AWS_272:Code signing needs a signing profile and a managed release pipeline; this function is built and deployed by its single owner
-  #checkov:skip=CKV_AWS_50:Lambda X-Ray tracing is enabled in Phase 9; correlation ids in the JSON logs cover diagnosis until then
   for_each = local.functions
 
   function_name = "${var.name_prefix}-${each.key}"
@@ -257,6 +263,13 @@ resource "aws_lambda_function" "function" {
       # PROCESS_FUNCTION: one zip means one environment, and an ARN is not a secret.
       TAGS_TOPIC_ARN = var.tags_topic_arn
     }
+  }
+
+  # A segment per call with its duration and errors. There is no SDK in the zip, so
+  # no per-call subsegments here (ADR 12); the access log and the correlation id
+  # cover the rest.
+  tracing_config {
+    mode = "Active"
   }
 
   depends_on = [

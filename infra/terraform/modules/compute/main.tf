@@ -98,6 +98,14 @@ resource "aws_iam_role_policy" "process" {
           "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:${local.log_group}:*"
         ]
       },
+      {
+        # Both actions only accept "*": X-Ray has no resource-level permissions for
+        # writing trace data, so this is as narrow as the policy can be.
+        Sid      = "WriteTraces"
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = ["*"]
+      },
     ]
   })
 }
@@ -122,7 +130,6 @@ resource "aws_lambda_function" "process" {
   #checkov:skip=CKV_AWS_117:Deliberately outside a VPC: egress would need a NAT gateway at about $32 a month for no benefit, since every service called is a public endpoint already gated by IAM (design document AD-5)
   #checkov:skip=CKV_AWS_173:The environment holds resource names (and, for the API functions, one allowed origin), no secrets, so the default AWS-managed key is sufficient
   #checkov:skip=CKV_AWS_272:Code signing needs a signing profile and a managed release pipeline; this function is built and deployed by its single owner
-  #checkov:skip=CKV_AWS_50:Lambda X-Ray tracing is enabled in Phase 9; correlation ids in the JSON logs cover diagnosis until then
   function_name = local.function_name
   role          = aws_iam_role.process.arn
 
@@ -142,6 +149,13 @@ resource "aws_lambda_function" "process" {
   # /tmp holds the model files plus the image being processed.
   ephemeral_storage {
     size = var.ephemeral_storage_mb
+  }
+
+  # Active tracing starts a segment for every invocation, so the SDK's subsegments
+  # (model-load, tagging, thumbnail) and the patched AWS calls have a parent. Free
+  # up to 100,000 traces a month.
+  tracing_config {
+    mode = "Active"
   }
 
   environment {
