@@ -425,7 +425,7 @@ CloudWatch, then Dashboards, then `wildlens-dev`.
 | Files tagged per hour | Zero while files are being uploaded: the queue is not draining, see the age widget |
 | Queue depth and dead-letter queue depth | Dead-letter above zero: see "The DLQ alarm fired" |
 | Age of the oldest queued message | Above the dotted line (1200 s) is the alarm. See "A file is stuck at PENDING" |
-| Tagging function error rate | Sustained above zero: read the logs for the correlation id |
+| Tagging function failures per 5 minutes | "Handed back to SQS" is a transient failure that will be retried; "crashed, timed out or ran out of memory" is Lambda's own error count. Either sustained above zero: read the logs for the correlation id |
 | Tagging function duration | p99 near 900 s is a file about to hit the timeout. A p50 that doubles after a deploy is a regression |
 | Cold-start ratio | Near 100 percent means containers are not being reused. Expected right after a deploy |
 | Model load and inference time | Model load far above 40 s is S3 or the image pull. Inference far above its usual few seconds is memory or CPU |
@@ -443,8 +443,10 @@ a status of `PendingConfirmation` means the link in the first mail was not click
 |---|---|---|
 | `wildlens-dev-dlq-not-empty` | A file failed three times | "The DLQ alarm fired" |
 | `wildlens-dev-queue-oldest-message` | A file has waited over 20 minutes and nothing processed it | Check the event source mapping is enabled and the function is not throttled; then "A file is stuck at PENDING" |
-| `wildlens-dev-process-errors` | More than 3 errors from the tagging function in 5 minutes | Dashboard, then the function's logs for the correlation id |
-| `wildlens-dev-upload-errors`, `-status-errors`, `-search-errors`, `-subscribe-errors` | More than 3 errors from that API function in 5 minutes | The access log for the failing requests, then that function's logs |
+| `wildlens-dev-process-transient-failures` | More than 3 files handed back to SQS for a retry in 5 minutes: something shared (S3, DynamoDB, the model bucket) is failing | `aws logs filter-log-events --log-group-name /aws/lambda/wildlens-dev-process --filter-pattern '"transient failure"'` for the traceback |
+| `wildlens-dev-api-5xx` | More than 3 server errors from the API in 5 minutes. A function caught an exception and returned 500, or API Gateway returned 502 or 504 | The access log for `status` 5xx and their `requestId`, then `unhandled error, correlationId=<requestId>` in that function's logs |
+| `wildlens-dev-process-errors` | The tagging function crashed, timed out or ran out of memory more than 3 times in 5 minutes. Caught failures do not count here | Dashboard, then the function's logs; a timeout shows as `Task timed out` |
+| `wildlens-dev-upload-errors`, `-status-errors`, `-search-errors`, `-subscribe-errors` | That API function crashed or timed out. A caught exception is a 500 and raises `api-5xx` instead | That function's logs, then the access log |
 
 An alarm that fires and clears produces one mail, not two: there is no mail on
 recovery. Look at the dashboard to see that it cleared.

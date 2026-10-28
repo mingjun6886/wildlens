@@ -50,15 +50,16 @@ locals {
     {
       type = "metric", x = 12, y = 6, width = 12, height = 6
       properties = {
-        title  = "Tagging function error rate (%)"
+        # Errors alone misses most failures: process catches a transient one and hands
+        # it back to SQS, which Lambda does not count. Both are shown.
+        title  = "Tagging function failures per 5 minutes"
         region = local.region
         view   = "timeSeries"
         period = 300
         stat   = "Sum"
         metrics = [
-          [{ expression = "100 * errors / invocations", label = "error rate", id = "rate" }],
-          ["AWS/Lambda", "Errors", "FunctionName", local.process, { id = "errors", visible = false }],
-          ["AWS/Lambda", "Invocations", "FunctionName", local.process, { id = "invocations", visible = false }],
+          ["WildLens/Process", "TransientFailures", { label = "handed back to SQS for a retry" }],
+          ["AWS/Lambda", "Errors", "FunctionName", local.process, { label = "crashed, timed out or ran out of memory" }],
         ]
       }
     },
