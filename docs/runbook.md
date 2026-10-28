@@ -3,9 +3,6 @@
 What to do when something is wrong. Each section states the symptom first, because
 that is what you have when you arrive.
 
-Sections marked **(Phase 9)** are placeholders for procedures that need the
-dashboard and tracing to exist. Everything else is usable now.
-
 ## Before anything
 
 ```bash
@@ -379,20 +376,78 @@ every script reads it from Terraform output.
 
 ---
 
-## (Phase 9) Tracing one request end to end
+## Tracing one request end to end
 
-Needs X-Ray. Until then, the correlation id does the same job less conveniently:
-every function logs `correlationId`, and for a queued file it is the SQS message
-id.
+Three views of the same request, from the outside in. The id that ties them together
+is the API Gateway request id; for a queued file it is the SQS message id.
+
+**1. The access log**, one JSON line per API request:
+
+```bash
+aws logs filter-log-events --log-group-name /aws/apigateway/wildlens-dev \
+  --filter-pattern '"<requestId>"' --query 'events[].message' --output text
+```
+
+It shows the status, the total latency and the time spent in the function
+(`integrationLatency`). A large gap between the two is API Gateway or the authoriser,
+not your code.
+
+**2. The function's own logs.** Every line carries `correlationId`:
 
 ```bash
 aws logs filter-log-events --log-group-name /aws/lambda/wildlens-dev-process \
   --filter-pattern '"<correlationId>"' --query 'events[].message' --output text
 ```
 
-## (Phase 9) The dashboard
+**3. The X-Ray trace**, which answers "where did those forty seconds go". In the
+console: CloudWatch, then X-Ray traces, then filter by the function. From the shell:
 
-Needs the dashboard.
+```bash
+aws xray get-trace-summaries \
+  --start-time $(( $(date +%s) - 3600 )) --end-time $(date +%s) \
+  --filter-expression 'service("wildlens-dev-process")' \
+  --query 'TraceSummaries[].[Id,Duration,HasError]' --output table
+aws xray batch-get-traces --trace-ids <id>
+```
+
+For `process`, read the subsegments in order: `model-load` (present only on a cold
+start, and usually 35 to 45 seconds), `tagging` (the detector and the species model
+together, a few seconds), `thumbnail`, and the DynamoDB, S3 and SNS calls the botocore
+patch records on their own. The four API functions have a single segment per call and
+no subsegments, by design (ADR 12).
+
+## The dashboard
+
+CloudWatch, then Dashboards, then `wildlens-dev`.
+
+| Widget | What a bad reading means |
+|---|---|
+| Files tagged per hour | Zero while files are being uploaded: the queue is not draining, see the age widget |
+| Queue depth and dead-letter queue depth | Dead-letter above zero: see "The DLQ alarm fired" |
+| Age of the oldest queued message | Above the dotted line (1200 s) is the alarm. See "A file is stuck at PENDING" |
+| Tagging function error rate | Sustained above zero: read the logs for the correlation id |
+| Tagging function duration | p99 near 900 s is a file about to hit the timeout. A p50 that doubles after a deploy is a regression |
+| Cold-start ratio | Near 100 percent means containers are not being reused. Expected right after a deploy |
+| Model load and inference time | Model load far above 40 s is S3 or the image pull. Inference far above its usual few seconds is memory or CPU |
+| API requests, errors and latency | 5xx is a function failing; 4xx is callers. Latency p95 near 29 s is `/search/byfile` hitting the API Gateway ceiling (ADR 5) |
+| `/search/byfile` calls per hour | `cold` is how many of those calls paid for a model load. This is the number ADR 5 said would decide whether the route needs the asynchronous design |
+
+## An alarm fired
+
+Mail from `wildlens-dev-alerts`. If nothing ever arrives, the subscription was never
+confirmed or `alert_email` was never set: check
+`aws sns list-subscriptions-by-topic --topic-arn <alerts_topic_arn from terraform output>`;
+a status of `PendingConfirmation` means the link in the first mail was not clicked.
+
+| Alarm | What it means | First thing to do |
+|---|---|---|
+| `wildlens-dev-dlq-not-empty` | A file failed three times | "The DLQ alarm fired" |
+| `wildlens-dev-queue-oldest-message` | A file has waited over 20 minutes and nothing processed it | Check the event source mapping is enabled and the function is not throttled; then "A file is stuck at PENDING" |
+| `wildlens-dev-process-errors` | More than 3 errors from the tagging function in 5 minutes | Dashboard, then the function's logs for the correlation id |
+| `wildlens-dev-upload-errors`, `-status-errors`, `-search-errors`, `-subscribe-errors` | More than 3 errors from that API function in 5 minutes | The access log for the failing requests, then that function's logs |
+
+An alarm that fires and clears produces one mail, not two: there is no mail on
+recovery. Look at the dashboard to see that it cleared.
 
 ---
 

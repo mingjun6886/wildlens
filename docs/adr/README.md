@@ -20,6 +20,7 @@ from a git log, which is the thing these documents exist to avoid.
 | [9](0009-keep-tokens-in-sessionstorage.md) | Keep tokens in sessionStorage, and defend with CSP instead | 7 |
 | [10](0010-ci-plans-with-a-read-only-oidc-role.md) | CI plans with a read-only OIDC role and never applies | 10 |
 | [11](0011-let-any-address-subscribe-and-keep-state-in-sns.md) | Let any address subscribe, and keep subscription state in SNS | 8 |
+| [12](0012-observe-with-a-separate-alert-topic-emf-metrics-and-xray-in-the-tagger.md) | Observe with a separate alert topic, EMF metrics and X-Ray in the tagger | 9 |
 
 Three of these record a decision that was **reversed or corrected**: baking the
 weights into the image was built and removed, HTTP API was recommended and then
