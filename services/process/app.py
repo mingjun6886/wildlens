@@ -31,9 +31,11 @@ from botocore.exceptions import ClientError
 from PIL import Image, UnidentifiedImageError
 
 from media_utils import make_thumbnail
+from metrics import emit
 from model_loader import artefact_bucket, artefact_version, get_models
 from notify import publish_tags
 from tagger import tag_image
+from tracing import span
 
 # True until the first invocation finishes. A warm invocation reuses the same
 # execution environment, and therefore the same module globals, so this flag
@@ -183,12 +185,31 @@ def record_failure(file_id: str, correlation_id: str, reason: str) -> None:
     log_event("failed", correlation_id, fileId=file_id, errorReason=reason)
 
 
+def emit_model_metrics(
+    model_load_ms: int, inference_ms: int, cold_start: bool, total_ms: int
+) -> None:
+    """The metrics that describe the model rather than the file.
+
+    Shared by stored files and query mode, because both run the model. The two cold
+    metrics are emitted only on a cold start, so the sample count of
+    ModelLoadDuration over Invocations is the cold-start ratio on the dashboard.
+    "Cold" is the same flag stored as coldStart in DynamoDB; if the first call on a
+    container fails before the model loads, the load on the next call is not counted.
+    That undercounts and never overcounts.
+    """
+    emit("InferenceDuration", inference_ms, "Milliseconds")
+    if cold_start:
+        emit("ModelLoadDuration", model_load_ms, "Milliseconds")
+        emit("ColdStartDuration", total_ms, "Milliseconds")
+
+
 def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, int]:
     """Tag a local file. Returns (tags, model_load_ms, inference_ms)."""
     version = artefact_version()
 
     started = time.time()
-    detector, species_model, classes, label_map = get_models(s3, artefact_bucket(), version)
+    with span("model-load"):
+        detector, species_model, classes, label_map = get_models(s3, artefact_bucket(), version)
     model_load_ms = int((time.time() - started) * 1000)
 
     # Readability was established by the caller. Note that tagger.tag_images
@@ -201,7 +222,8 @@ def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, 
     # the weights inside this timed section. That is why the old benchmark showed
     # "inference" at 8 s warm when the real figure was closer to 7.
     started = time.time()
-    tags = tag_image(str(path), detector, species_model, classes, label_map)
+    with span("tagging"):
+        tags = tag_image(str(path), detector, species_model, classes, label_map)
     inference_ms = int((time.time() - started) * 1000)
 
     return tags, model_load_ms, inference_ms
@@ -290,7 +312,8 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
 
             thumb_key = f"{file_id}{suffix}"
             thumb_path = TMP / f"thumb-{uuid.uuid4().hex}.jpg"
-            make_thumbnail(local_path, thumb_path)
+            with span("thumbnail"):
+                make_thumbnail(local_path, thumb_path)
             # ContentType is set explicitly because S3 does not infer it. Without
             # it the object is served as binary/octet-stream, which a browser may
             # still render by sniffing but will offer to download rather than
@@ -307,6 +330,7 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             record_failure(file_id, correlation_id, str(failure))
             raise
 
+        processing_ms = int((time.time() - started) * 1000)
         record_success(
             file_id,
             correlation_id,
@@ -325,9 +349,14 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             createdAt=Decimal(int(time.time())),
             modelVersion=artefact_version(),
             modelLoadMs=Decimal(model_load_ms),
-            processingMs=Decimal(int((time.time() - started) * 1000)),
+            processingMs=Decimal(processing_ms),
             coldStart=cold_start,
         )
+        # Metrics follow the record and precede the publish, so neither can be lost to
+        # the other failing. TagsPerFile is emitted for an empty result too: a file
+        # with no animals is still a file that was processed.
+        emit_model_metrics(model_load_ms, inference_ms, cold_start, processing_ms)
+        emit("TagsPerFile", sum(tags.values()), "Count")
         # After the record is written, not before: the tags are the product and the
         # email is a side effect. publish_tags never raises, so a failure here
         # cannot send the message back to SQS, where claim() would skip it as DONE
@@ -340,6 +369,7 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
 
 def handler(event, _context):
     global _COLD_START
+    handler_started = time.time()
     cold_start = _COLD_START
     _COLD_START = False
 
@@ -356,6 +386,19 @@ def handler(event, _context):
             tags, model_load_ms, inference_ms = load_and_tag(query_path, correlation_id)
         finally:
             query_path.unlink(missing_ok=True)
+        emit_model_metrics(
+            model_load_ms, inference_ms, cold_start, int((time.time() - handler_started) * 1000)
+        )
+        # Counted by a Logs Insights widget (ADR 5 wants to know how often this route
+        # is hit cold). coldStart is an integer here because Insights can sum one; a
+        # JSON boolean is not guaranteed to be summable.
+        log_event(
+            "query tagged",
+            correlation_id,
+            coldStart=int(cold_start),
+            modelLoadMs=model_load_ms,
+            inferenceMs=inference_ms,
+        )
         return {
             "tags": tags,
             "coldStart": cold_start,
