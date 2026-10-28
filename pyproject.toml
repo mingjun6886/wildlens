@@ -23,6 +23,7 @@ known-first-party = [
   "app",
   "common",
   "media_utils",
+  "metrics",
   "model_loader",
   "notify",
   "notify_policy",
