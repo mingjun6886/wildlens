@@ -13,7 +13,7 @@ When something is wrong, the owner is told by email within minutes, and can then
 - an alarm that fires sends one email to a confirmed address;
 - one X-Ray trace of an uploaded image shows the time spent loading the model, tagging, making the thumbnail and each AWS call;
 - one dashboard answers "is it healthy and how fast is it" at a glance;
-- the six `checkov:skip` lines that promise "Phase 9" are gone.
+- the `checkov:skip` lines that promise "Phase 9" are gone (five of the six; section 6 says why `CKV2_AWS_4` may stay).
 
 The design document (`docs/design/2026-09-22-architecture.md`, sections 7.3 and 8) fixes the shape: X-Ray on API Gateway and every function, four custom metrics, one dashboard, alarms to email, 14-day log retention. This phase follows it and records each place it differs (section 8).
 
@@ -45,10 +45,10 @@ An alarm on the cold-start ratio; an alarm on the `notification not sent` log li
 | `modules/compute`, `modules/api_functions` | `tracing_config { mode = "Active" }` and the two X-Ray write actions on each function's own role | nothing |
 | `modules/queue` | Receives `alarm_topic_arns` (the variable already exists) | the alerts topic |
 | `services/process/metrics.py` | `emit(name, value, unit)`: one EMF line to stdout | nothing |
-| `services/process/trace.py` | `span(name)`: a context manager that opens an X-Ray subsegment, or does nothing | `aws-xray-sdk`, if installed |
+| `services/process/tracing.py` | `span(name)`: a context manager that opens an X-Ray subsegment, or does nothing | `aws-xray-sdk`, if installed |
 | `services/process/app.py` | Calls both, and logs one line per query-mode call | the two modules above |
 
-`metrics` and `trace` are added to `known-first-party` in `pyproject.toml` and each gets a `COPY` line in `services/process/Dockerfile` (`test_packaging.py` fails without it).
+`metrics` and `tracing` are added to `known-first-party` in `pyproject.toml` and each gets a `COPY` line in `services/process/Dockerfile` (`test_packaging.py` fails without it).
 
 ---
 
@@ -56,7 +56,7 @@ An alarm on the cold-start ratio; an alarm on the `notification not sent` log li
 
 ### 3.1 Topic and subscription
 
-`aws_sns_topic.alerts` named `${name_prefix}-alerts`, encrypted with `alias/aws/sns`, as the tags topic is. CloudWatch publishes to an AWS-managed key's topic without extra grants only when the topic policy allows `cloudwatch.amazonaws.com`: the module therefore sets an explicit topic policy allowing `sns:Publish` from `cloudwatch.amazonaws.com` conditioned on `aws:SourceAccount`.
+`aws_sns_topic.alerts` named `${name_prefix}-alerts`, **not encrypted at rest**, unlike the tags topic. A CloudWatch alarm cannot publish to a topic encrypted with the AWS-managed key `alias/aws/sns`, because that key's policy cannot be changed to allow CloudWatch, and the failure is silent: the alarm fires and no mail arrives. Encrypting it needs a customer-managed key at about $1 a month. An alert holds a resource name, a metric and a threshold, nothing a user submitted, so the topic stays unencrypted and the checkov finding (`CKV_AWS_26`) is skipped on the resource with this reason. The default topic policy already lets alarms in the same account publish, so no explicit policy is written. Step 5 of the manual checks below is therefore **not optional**: `set-alarm-state` is the only proof an alarm can reach the owner.
 
 `aws_sns_topic_subscription.email` is created with `count = var.alert_email == "" ? 0 : 1`. A new file `terraform.tfvars.example` shows the variable with a placeholder. SNS sends a confirmation mail on first apply; nothing arrives until it is confirmed.
 
@@ -87,7 +87,7 @@ The budget alarm in the design (10 / 25 / 50 dollars) already exists from Phase 
 
 ### 4.2 `process`
 
-`trace.span(name)` is a context manager. It opens `aws_xray_sdk.core.xray_recorder.in_subsegment(name)` when the SDK imports and a segment is active, and otherwise yields without doing anything, so unit tests, `ml/eval` and local runs need no SDK. `patch(["boto3"])` is applied once at import, which gives the DynamoDB, S3 and SNS calls their own subsegments with no code of ours.
+`tracing.span(name)` is a context manager. It opens `aws_xray_sdk.core.xray_recorder.in_subsegment(name)` when the SDK imports and a segment is active, and otherwise yields without doing anything, so unit tests, `ml/eval` and local runs need no SDK. `patch(["boto3"])` is applied once at import, which gives the DynamoDB, S3 and SNS calls their own subsegments with no code of ours.
 
 Spans in `app.py`: `model-load` (around `get_models`), `tagging` (around `tag_image`), `thumbnail` (around `make_thumbnail` and the upload).
 
@@ -145,7 +145,7 @@ The query-mode branch of `handler` logs no line today. It gains one structured l
 - `aws_cloudwatch_log_group` `/aws/apigateway/${name_prefix}` with `retention_in_days = var.log_retention_days`, and the two checkov skips the existing log groups carry (`CKV_AWS_158`, `CKV_AWS_338`), each with its reason;
 - `access_log_settings` on the stage, format JSON with `requestId`, `extendedRequestId`, `httpMethod`, `resourcePath`, `status`, `responseLatency`, `integrationLatency`, `integrationStatus`, `errorMessage`. **No caller email or IP.** The repository is public and the logs hold user data; `requestId` is enough, because `common.correlation_id` returns that same id, so an access-log line ties directly to the function's own log lines;
 - the stage `depends_on` the account resource: a stage cannot enable logging until the account has a role, and the failure message does not say so.
-- Removed: `CKV_AWS_76`, `CKV2_AWS_4`.
+- Removed: `CKV_AWS_76`. `CKV2_AWS_4` ("stage has a logging level") is expected to want method settings with `logging_level`, which means execution logging: a second, verbose log group this phase did not decide on. If checkov still reports it, the skip stays with its reason rewritten to say access logging is on and execution logging is not; if it passes, the skip goes.
 
 **Consequence of D6.** The AWS provider 6.67.0 pinned here resets the account's CloudWatch role to unset on `destroy` (documented in the provider's 6.x upgrade guide and not run here). A `terraform destroy` of this estate therefore switches API Gateway logging off for any other API in the account, and nothing else is in this account today. ADR 12 records it. Destroy order is safe: the stage depends on the account resource, so the stage goes first.
 
@@ -185,7 +185,7 @@ One `aws_cloudwatch_dashboard` named `${name_prefix}`, which falls inside the th
 **Unit** (no AWS):
 
 - `metrics`: one line, valid JSON, the `_aws` block names the right namespace, an empty dimension set, the right unit; `emit` never raises when stdout write fails.
-- `trace`: with no SDK, `span` yields and does nothing; with a fake recorder injected, it opens a subsegment of the given name and closes it when the body raises.
+- `tracing`: with no SDK, `span` yields and does nothing; with a fake recorder injected, it opens a subsegment of the given name and closes it when the body raises.
 - `app`: a stored file emits `InferenceDuration` and `TagsPerFile`; the first call also emits `ModelLoadDuration` and `ColdStartDuration` and the second does not; a query-mode call emits the model metrics but not `TagsPerFile`, and logs `query tagged`; a file that fails permanently emits no `TagsPerFile`.
 - `test_packaging`: every flat module `app.py` imports, including the two new ones, has a `COPY` line.
 
@@ -197,7 +197,7 @@ One `aws_cloudwatch_dashboard` named `${name_prefix}`, which falls inside the th
 2. Build and push the `process` image, update the function, confirm `LastUpdateStatus` is `Successful`.
 3. The owner confirms the alerts subscription mail.
 4. Upload a new image. Check: the X-Ray trace shows `model-load`, `tagging`, `thumbnail` and the DynamoDB and S3 calls; the four metrics appear in `WildLens/Process`; the API access log has a line with that request id; the dashboard renders every widget.
-5. Optional, with the owner's go-ahead because it sends mail: `aws cloudwatch set-alarm-state` on one alarm, to see the alert arrive, then reset it.
+5. With the owner's go-ahead, because it sends mail: `aws cloudwatch set-alarm-state` on one alarm to `ALARM`, confirm the alert arrives, then set it back to `OK`. Required, for the reason in section 3.1.
 
 ---
 
