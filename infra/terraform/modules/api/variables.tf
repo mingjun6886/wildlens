@@ -74,3 +74,9 @@ variable "route_throttles" {
   }))
   default = {}
 }
+
+variable "log_retention_days" {
+  description = "Retention of the access log group. The CloudWatch default is forever."
+  type        = number
+  default     = 14
+}
