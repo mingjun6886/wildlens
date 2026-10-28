@@ -31,7 +31,7 @@ variable "max_receive_count" {
 }
 
 variable "alarm_topic_arns" {
-  description = "SNS topics notified when the dead-letter queue is not empty. Empty until Phase 8 creates the topic."
+  description = "SNS topics notified when the dead-letter queue is not empty. The dev environment passes the alerts topic from the observability module."
   type        = list(string)
   default     = []
 }

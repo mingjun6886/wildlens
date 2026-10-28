@@ -61,6 +61,9 @@ module "queue" {
   name_prefix     = local.name_prefix
   raw_bucket_name = module.storage.bucket_names["raw"]
   raw_bucket_arn  = module.storage.bucket_arns["raw"]
+
+  # The dead-letter alarm already existed; this is what finally tells someone.
+  alarm_topic_arns = [module.observability.alerts_topic_arn]
 }
 
 module "notify" {
@@ -203,6 +206,20 @@ module "api" {
       function_name = module.api_functions.function_names["subscribe"]
     }
   }
+}
+
+module "observability" {
+  source = "../../modules/observability"
+
+  name_prefix = local.name_prefix
+  alert_email = var.alert_email
+
+  function_names    = merge(module.api_functions.function_names, { process = module.compute.function_name })
+  queue_name        = module.queue.queue_name
+  dlq_name          = module.queue.dlq_name
+  process_log_group = module.compute.log_group
+  api_name          = module.api.rest_api_name
+  api_stage         = var.api_stage
 }
 
 module "cdn" {
