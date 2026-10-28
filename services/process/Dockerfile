@@ -108,6 +108,16 @@ RUN pip install --no-cache-dir --no-deps onnx2torch
 # break the scipy ABI compiled against it.
 RUN pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless
 
+# --- Step 7: X-Ray SDK -------------------------------------------------------
+#
+# Not in the Lambda runtime, and only this image needs it: the API functions are
+# traced without the SDK (ADR 12). It depends on botocore and wrapt, and wrapt
+# ships a wheel, so --only-binary costs nothing and turns a surprise compile into
+# an immediate error. The protobuf pin from step 4 should not move; the
+# verification below asserts it, because that pin was won against a conflict and
+# any later install could undo it.
+RUN pip install --no-cache-dir --only-binary=:all: "aws-xray-sdk==2.15.0"
+
 # --- Verification -----------------------------------------------------------
 #
 # Fail here, where the output is a build log, rather than at the first
@@ -115,7 +125,9 @@ RUN pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headles
 RUN python -c "\
 from megadetector.detection.run_detector_batch import load_and_run_detector_batch; \
 import torch, onnx, onnx2torch, cv2, numpy, google.protobuf as pb; \
+from aws_xray_sdk.core import patch, xray_recorder; \
 assert not torch.cuda.is_available(), 'CUDA build leaked in'; \
+assert pb.__version__ == '3.20.3', 'protobuf pin moved: ' + pb.__version__; \
 print('verified:', torch.__version__, '| onnx', onnx.__version__, \
       '| protobuf', pb.__version__, '| cv2', cv2.__version__)"
 
@@ -131,5 +143,7 @@ COPY services/process/app.py          ${LAMBDA_TASK_ROOT}/
 COPY services/process/model_loader.py ${LAMBDA_TASK_ROOT}/
 COPY services/process/media_utils.py  ${LAMBDA_TASK_ROOT}/
 COPY services/process/notify.py       ${LAMBDA_TASK_ROOT}/
+COPY services/process/metrics.py      ${LAMBDA_TASK_ROOT}/
+COPY services/process/tracing.py      ${LAMBDA_TASK_ROOT}/
 
 CMD ["app.handler"]
