@@ -22,3 +22,8 @@ output "dlq_url" {
   description = "Dead-letter queue URL, for inspecting failed messages."
   value       = aws_sqs_queue.dlq.id
 }
+
+output "dlq_name" {
+  description = "Dead-letter queue name, the QueueName dimension of its metrics."
+  value       = aws_sqs_queue.dlq.name
+}

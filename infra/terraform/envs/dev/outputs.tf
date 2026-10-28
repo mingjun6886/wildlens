@@ -103,3 +103,13 @@ output "plan_role_arn" {
 output "tags_topic_arn" {
   value = module.notify.topic_arn
 }
+
+output "alerts_topic_arn" {
+  description = "Alarm notifications go here."
+  value       = module.observability.alerts_topic_arn
+}
+
+output "dashboard_name" {
+  description = "Open it in the CloudWatch console under Dashboards."
+  value       = module.observability.dashboard_name
+}
