@@ -1,7 +1,7 @@
 # Phase 9 - Observability: tracing, metrics, alarms, dashboard
 
 **Date:** 2026-10-29
-**Status:** Awaiting review
+**Status:** Approved; implemented in Phase 9
 **Scope:** `services/process/` (two new flat modules, the Dockerfile), `infra/terraform/modules/observability` (new), `infra/terraform/modules/apigw_logging` (new), `infra/terraform/modules/api`, `infra/terraform/modules/api_functions`, `infra/terraform/modules/compute`, `infra/terraform/modules/queue` (wiring only), `docs/runbook.md`, documentation
 
 ---
@@ -87,9 +87,9 @@ The budget alarm in the design (10 / 25 / 50 dollars) already exists from Phase 
 
 ### 4.2 `process`
 
-`tracing.span(name)` is a context manager. It opens `aws_xray_sdk.core.xray_recorder.in_subsegment(name)` when the SDK imports and a segment is active, and otherwise yields without doing anything, so unit tests, `ml/eval` and local runs need no SDK. `patch(["boto3"])` is applied once at import, which gives the DynamoDB, S3 and SNS calls their own subsegments with no code of ours.
+`tracing.span(name)` is a context manager. It opens `aws_xray_sdk.core.xray_recorder.in_subsegment(name)` when the SDK imports and a segment is active, and otherwise yields without doing anything, so unit tests, `ml/eval` and local runs need no SDK. `patch(["botocore"])` is applied once at import, which gives the DynamoDB, S3 and SNS calls their own subsegments with no code of ours (boto3 clients go through botocore, which is the name the SDK accepts).
 
-Spans in `app.py`: `model-load` (around `get_models`), `tagging` (around `tag_image`), `thumbnail` (around `make_thumbnail` and the upload).
+Spans in `app.py`: `model-load` (around `get_models`), `tagging` (around `tag_image`), `thumbnail` (around `make_thumbnail`; the upload is already an S3 subsegment).
 
 **One `tagging` span, not two.** `ml/tagger.py` runs the detector and the species model inside a single call and exposes no boundary between them. Splitting the span would mean changing `ml/`, which the evaluation script and the Lambda both depend on, for a distinction the `InferenceDuration` metric and the detector log already show. The design's wording ("MegaDetector, SpeciesNet") is not met literally; section 8.
 
@@ -129,7 +129,7 @@ The cold-start ratio on the dashboard is the sample count of `ModelLoadDuration`
 
 ### 5.2 Counting `/search/byfile`
 
-The query-mode branch of `handler` logs no line today. It gains one structured line, `query tagged`, carrying `coldStart`, `modelLoadMs` and `inferenceMs`, so the dashboard can count calls to the route with a Logs Insights query. ADR 5 asks for exactly this number.
+The query-mode branch of `handler` logs no line today. It gains one structured line, `query tagged`, carrying `coldStart`, `modelLoadMs` and `inferenceMs`, so the dashboard can count calls to the route with a Logs Insights query. ADR 5 asks for exactly this number. The line carries `coldStart` as an integer, because Logs Insights can sum an integer and a JSON boolean is not guaranteed to be summable.
 
 ---
 
