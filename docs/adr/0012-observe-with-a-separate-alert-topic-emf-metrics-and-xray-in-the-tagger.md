@@ -20,8 +20,19 @@ AWS-managed key `alias/aws/sns`, the failure is silent, and a customer-managed k
 costs $1 a month for an alert that carries no user data.
 
 **Alarms:** the existing dead-letter alarm (now wired to the topic), more than 3
-errors in 5 minutes for each of the five functions, and the age of the oldest message
-in the ingest queue above 1200 seconds.
+errors in 5 minutes for each of the five functions, more than 3 API 5xx responses in
+5 minutes, more than 3 transient failures of `process` in 5 minutes (a log metric
+filter on its `transient failure` line), and the age of the oldest message in the
+ingest queue above 1200 seconds.
+
+The `AWS/Lambda Errors` alarms alone would miss most real failures, which the review
+of this phase caught before deployment. Lambda counts an error only when a function
+raises, times out, runs out of memory or crashes at init. The API functions catch
+every exception in `common.handle_errors` and return a 500, and `process` hands a
+transient failure back to SQS through `batchItemFailures`. Both are deliberate and
+both are invisible to that metric, so the 5xx and transient-failure alarms watch
+where those failures do show up. The `Errors` alarms stay, for the cases they do
+see.
 
 **Metrics through EMF**, namespace `WildLens/Process`, with no dimensions:
 `ModelLoadDuration` and `ColdStartDuration` (cold starts only), `InferenceDuration`
@@ -65,7 +76,7 @@ role out of this environment.
 before the model loads, the load on the next call is not counted. The ratio
 undercounts and never overcounts.
 
-**Metrics add about $1.20 a month.** X-Ray stays inside its free tier at this
+**Metrics add about $1.50 a month** (four EMF metrics and the log-filter metric). X-Ray stays inside its free tier at this
 volume, and the dashboard is one of the three CloudWatch does not bill.
 
 **Alarm mail depends on someone confirming the subscription.** With `alert_email`

@@ -50,6 +50,68 @@ resource "aws_cloudwatch_metric_alarm" "function_errors" {
   alarm_actions = [aws_sns_topic.alerts.arn]
 }
 
+# The errors alarms above see only what Lambda counts as an error: a raise, a timeout,
+# running out of memory, a crash at init. Most real failures are none of those. The
+# API functions catch every exception in common.handle_errors and return a 500, and
+# process catches a transient failure and reports it back to SQS for a retry. Both
+# are deliberate, and both are invisible to AWS/Lambda Errors. The two alarms below
+# watch where those failures do show up.
+
+# Every 500 the API returns, from any function, since handle_errors turns an
+# unhandled exception into one. 502 and 504 from API Gateway itself count too.
+resource "aws_cloudwatch_metric_alarm" "api_5xx" {
+  alarm_name        = "${var.name_prefix}-api-5xx"
+  alarm_description = "More than 3 server errors from the API in 5 minutes. See docs/runbook.md, An alarm fired."
+
+  namespace   = "AWS/ApiGateway"
+  metric_name = "5XXError"
+  dimensions  = { ApiName = var.api_name, Stage = var.api_stage }
+
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 3
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+# process logs "transient failure on <key>, will retry" for every file it hands back
+# to SQS. One file failing three times ends in the dead-letter queue and its own
+# alarm; several in five minutes means something shared is down (S3, DynamoDB, the
+# model bucket). This is a fifth custom metric, about $0.30 a month.
+resource "aws_cloudwatch_log_metric_filter" "transient_failures" {
+  name           = "${var.name_prefix}-process-transient-failures"
+  log_group_name = var.process_log_group
+  pattern        = "\"transient failure\""
+
+  metric_transformation {
+    name      = "TransientFailures"
+    namespace = "WildLens/Process"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "transient_failures" {
+  alarm_name        = "${var.name_prefix}-process-transient-failures"
+  alarm_description = "More than 3 files handed back to SQS for a retry in 5 minutes. See docs/runbook.md, An alarm fired."
+
+  namespace   = "WildLens/Process"
+  metric_name = "TransientFailures"
+
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 3
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+
+  depends_on = [aws_cloudwatch_log_metric_filter.transient_failures]
+}
+
 # Replaces the design document's "more than 10 records stuck PENDING". CloudWatch has
 # no per-status count for DynamoDB, a PENDING record expires through its own
 # one-hour TTL, and abandoned uploads would make that alarm noisy. A file waiting in

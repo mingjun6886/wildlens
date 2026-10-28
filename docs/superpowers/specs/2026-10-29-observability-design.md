@@ -70,6 +70,8 @@ All alarms use `treat_missing_data = "notBreaching"`, as `dlq_not_empty` does, s
 | `<function>-errors`, one per function (`process`, `upload`, `search`, `status`, `subscribe`) | `AWS/Lambda Errors`, Sum | > 3 over one 5-minute period |
 | `queue-oldest-message` | `AWS/SQS ApproximateAgeOfOldestMessage` on the main queue, Maximum | > 1200 s over one 5-minute period |
 
+**Added after the final review:** `api-5xx` (`AWS/ApiGateway 5XXError`, Sum > 3 over 5 minutes) and `process-transient-failures` (a log metric filter on the `transient failure` line, Sum > 3 over 5 minutes). `AWS/Lambda Errors` counts only a raise, a timeout, running out of memory or an init crash. The API functions return a 500 from `common.handle_errors` and `process` hands transient failures back to SQS, so the errors alarms alone would miss most real failures (ADR 12).
+
 The age threshold is 1200 s, not the 900 s of the design's PENDING alarm: a message being processed still counts toward the age, and `process` is allowed to run for 900 s, so 900 would fire on a file that merely used its full timeout. 1200 s means a file has waited, or been retried, past any legitimate run.
 
 The budget alarm in the design (10 / 25 / 50 dollars) already exists from Phase 0 and is not touched.
