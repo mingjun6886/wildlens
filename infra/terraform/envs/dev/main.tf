@@ -126,6 +126,13 @@ module "api_functions" {
   tags_topic_arn = module.notify.topic_arn
 }
 
+# The account-level role API Gateway needs before a stage may write access logs.
+module "apigw_logging" {
+  source = "../../modules/apigw_logging"
+
+  name_prefix = local.name_prefix
+}
+
 module "api" {
   source = "../../modules/api"
 
@@ -133,6 +140,11 @@ module "api" {
   name_prefix           = local.name_prefix
   cognito_user_pool_arn = module.auth.user_pool_arn
   allowed_origin        = var.allowed_origin
+
+  # A stage cannot enable access logging until the account has a role, and the error
+  # when it has not does not say so. On destroy the order reverses: the stage goes
+  # first, then the account setting is reset.
+  depends_on = [module.apigw_logging]
 
   # Paths first, routes second: two methods on one path must share a resource,
   # and CORS is keyed off the paths so that sharing cannot produce a duplicate

@@ -263,22 +263,46 @@ resource "aws_api_gateway_deployment" "api" {
   }
 }
 
+# --- Access log ---------------------------------------------------------------
+#
+# One JSON line per request. requestId is the same id the functions log as
+# correlationId (common.correlation_id), so an access-log line ties straight to the
+# function's own lines. The caller's email and IP are deliberately not logged: this
+# repository is public and these logs would hold user data.
+resource "aws_cloudwatch_log_group" "access" {
+  #checkov:skip=CKV_AWS_158:Logs are encrypted at rest with the default AWS-managed key; a customer-managed key costs $1 a month and adds nothing for access logs that hold no secrets
+  #checkov:skip=CKV_AWS_338:Retention is 14 days by design, to bound log storage cost (design document, observability)
+  name              = "/aws/apigateway/${var.name_prefix}"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_api_gateway_stage" "stage" {
   #checkov:skip=CKV2_AWS_29:No WAF: a web ACL costs about $5 a month plus per-request fees, out of proportion for a single-user dev estate under a $100 credit budget. API routes other than CORS preflight sit behind a Cognito authoriser, and the site serves only static files
-  #checkov:skip=CKV2_AWS_4:Execution logging is configured in Phase 9 together with tracing and the dashboard
+  #checkov:skip=CKV2_AWS_4:Access logging is on (one JSON line per request). Execution logging is not: it writes verbose per-request detail to a second log group that API Gateway creates with no retention unless declared, and the access log plus the function logs already answer what happened
   #checkov:skip=CKV2_AWS_51:Client certificates authenticate API Gateway to an HTTP backend; the backends here are Lambda functions called through IAM, so there is nothing to present one to
   #checkov:skip=CKV_AWS_120:Gateway caching is billed per hour by cache size, and responses are per-user and low volume
-  #checkov:skip=CKV_AWS_73:API Gateway X-Ray tracing is enabled in Phase 9
-  #checkov:skip=CKV_AWS_76:Access logging is configured in Phase 9 together with tracing and the dashboard
   rest_api_id   = aws_api_gateway_rest_api.api.id
   deployment_id = aws_api_gateway_deployment.api.id
   stage_name    = var.stage_name
 
-  # Access logging and X-Ray tracing are configured in Phase 9, together with the
-  # dashboard and the alarms. Both need an account-level API Gateway CloudWatch
-  # role, which is a single regional setting shared by every API in the account —
-  # a resource that does not belong to one API's module, and one whose destruction
-  # would silently disable logging for anything else using it.
+  # The account-level role this needs is in modules/apigw_logging; the environment
+  # makes this module depend on it.
+  xray_tracing_enabled = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.access.arn
+    format = jsonencode({
+      requestId          = "$context.requestId"
+      extendedRequestId  = "$context.extendedRequestId"
+      httpMethod         = "$context.httpMethod"
+      resourcePath       = "$context.resourcePath"
+      status             = "$context.status"
+      responseLatency    = "$context.responseLatency"
+      integrationLatency = "$context.integrationLatency"
+      integrationStatus  = "$context.integrationStatus"
+      errorMessage       = "$context.error.message"
+    })
+  }
 }
 
 resource "aws_api_gateway_method_settings" "throttle" {
