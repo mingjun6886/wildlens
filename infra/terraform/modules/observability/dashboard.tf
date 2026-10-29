@@ -123,11 +123,13 @@ locals {
     },
     {
       type = "log", x = 0, y = 24, width = 24, height = 6
+      # The bin is aliased because Logs Insights rejects "sort bin(1h)" with a
+      # MalformedQueryException; measured against the real log group.
       properties = {
         title  = "/search/byfile calls per hour, and how many were cold (ADR 5)"
         region = local.region
         view   = "table"
-        query  = "SOURCE '${var.process_log_group}' | filter msg = 'query tagged' | stats count(*) as calls, sum(coldStart) as cold by bin(1h) | sort bin(1h) desc"
+        query  = "SOURCE '${var.process_log_group}' | filter msg = 'query tagged' | stats count(*) as calls, sum(coldStart) as cold by bin(1h) as hour | sort hour desc"
       }
     },
   ]
