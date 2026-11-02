@@ -211,8 +211,8 @@ module "api" {
 module "observability" {
   source = "../../modules/observability"
 
-  name_prefix = local.name_prefix
-  alert_email = var.alert_email
+  name_prefix           = local.name_prefix
+  alert_email_parameter = "/${var.project}/${var.environment}/alert-email"
 
   function_names    = merge(module.api_functions.function_names, { process = module.compute.function_name })
   queue_name        = module.queue.queue_name
