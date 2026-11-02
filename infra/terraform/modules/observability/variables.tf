@@ -3,14 +3,13 @@ variable "name_prefix" {
   type        = string
 }
 
-variable "alert_email" {
+variable "alert_email_parameter" {
   description = <<-EOT
-    Address that receives alarm mail. Empty creates the topic and the alarms but no
-    subscription, which means an alarm fires and nobody is told. The real value
-    belongs in an untracked terraform.tfvars: this repository is public.
+    Name of the SSM String parameter holding the address that receives alarm mail.
+    Created by hand once (docs/runbook.md, An alarm fired). If it does not exist the
+    plan fails, which is the point: an alarm with nobody subscribed tells no one.
   EOT
   type        = string
-  default     = ""
 }
 
 variable "function_names" {

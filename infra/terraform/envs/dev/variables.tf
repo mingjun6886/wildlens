@@ -97,13 +97,3 @@ variable "state_bucket" {
   type        = string
   default     = "wildlens-tfstate-895770859102"
 }
-
-variable "alert_email" {
-  description = <<-EOT
-    Address that receives alarm mail. Empty means the alarms exist and nobody is told.
-    Set it in an untracked terraform.tfvars (see terraform.tfvars.example): this
-    repository is public.
-  EOT
-  type        = string
-  default     = ""
-}

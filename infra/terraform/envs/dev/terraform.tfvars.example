@@ -1,3 +1,0 @@
-# Copy to terraform.tfvars (which git ignores) and set a real address. SNS sends a
-# confirmation mail on the first apply; no alarm mail arrives until it is confirmed.
-alert_email = "you@example.com"
