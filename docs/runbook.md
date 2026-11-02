@@ -276,6 +276,16 @@ If that line is **absent** from the plan after a route change, the hash is missi
 an entry. Add the omitted resource to `triggers.redeploy` — the symptom is one
 route that never deploys while everything else works.
 
+The opposite also happens and is harmless: the plan **after** an apply that created
+or changed a route can propose replacing the deployment once more with no edit at
+all, and the plan after that shows no changes. It was seen after Phase 8 and gone
+after Phase 9. The hash covers whole resource objects, and the likeliest cause
+(unproven) is an attribute AWS fills in after creation that reads back differently
+on the next refresh. Hashing only the inputs would avoid it, at the risk of missing
+one and recreating the defect above, so the extra redeploy is accepted. It costs
+about a minute of `403 Missing Authentication Token` while the new deployment
+propagates.
+
 As an immediate workaround:
 
 ```bash
@@ -435,9 +445,23 @@ CloudWatch, then Dashboards, then `wildlens-dev`.
 ## An alarm fired
 
 Mail from `wildlens-dev-alerts`. If nothing ever arrives, the subscription was never
-confirmed or `alert_email` was never set: check
+confirmed: check
 `aws sns list-subscriptions-by-topic --topic-arn <alerts_topic_arn from terraform output>`;
 a status of `PendingConfirmation` means the link in the first mail was not clicked.
+`aws sns subscribe` with the same topic, protocol and address sends the confirmation
+mail again without creating a second subscription.
+
+The address lives in SSM Parameter Store, not in the repository, which is public
+(ADR 12). Before the first apply on a new account, or to change the address:
+
+```bash
+aws ssm put-parameter --name /wildlens/dev/alert-email --type String \
+  --value "<address>" --overwrite
+```
+
+If it is missing, `terraform plan` fails with `ParameterNotFound` on
+`data.aws_ssm_parameter.alert_email`. That is deliberate: without it the alarms
+would fire at nobody.
 
 | Alarm | What it means | First thing to do |
 |---|---|---|

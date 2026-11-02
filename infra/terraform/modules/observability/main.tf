@@ -13,14 +13,32 @@ resource "aws_sns_topic" "alerts" {
   name = "${var.name_prefix}-alerts"
 }
 
-# Created only when an address is given. SNS mails a confirmation link on the first
-# apply and delivers nothing until it is clicked.
-resource "aws_sns_topic_subscription" "email" {
-  count = var.alert_email == "" ? 0 : 1
+# The address is read from SSM Parameter Store, set once by hand, rather than from a
+# variable. It used to be a variable fed by an untracked terraform.tfvars, and a
+# plan from anywhere without that file (CI, a fresh clone) proposed destroying the
+# subscription, silently, because an empty address meant "no subscription". Now a
+# missing parameter fails the plan loudly instead. The repository is public, so the
+# address never appears in it; the provider marks the value sensitive, so it never
+# appears in plan output either. The read-only CI role can read it (ReadOnlyAccess,
+# and a String parameter needs no KMS key).
+data "aws_ssm_parameter" "alert_email" {
+  name = var.alert_email_parameter
+}
 
+# SNS mails a confirmation link when this is created and delivers nothing until it is
+# clicked.
+resource "aws_sns_topic_subscription" "email" {
   topic_arn = aws_sns_topic.alerts.arn
   protocol  = "email"
-  endpoint  = var.alert_email
+  endpoint  = data.aws_ssm_parameter.alert_email.value
+}
+
+# The subscription had count = 0 or 1 while the address was optional. Without this the
+# confirmed subscription would be destroyed and recreated, and SNS would ask for
+# confirmation again.
+moved {
+  from = aws_sns_topic_subscription.email[0]
+  to   = aws_sns_topic_subscription.email
 }
 
 # --- Alarms ------------------------------------------------------------------

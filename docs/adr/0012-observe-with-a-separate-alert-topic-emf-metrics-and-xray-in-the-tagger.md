@@ -14,7 +14,8 @@ rest "in Phase 9".
 
 **Alarms go to their own SNS topic**, `wildlens-dev-alerts`, with an email
 subscription created from the variable `alert_email`. The address lives in an
-untracked `terraform.tfvars` because the repository is public. The topic is **not
+untracked `terraform.tfvars` because the repository is public (since moved to SSM;
+see the amendment below). The topic is **not
 encrypted**: a CloudWatch alarm cannot publish to a topic encrypted with the
 AWS-managed key `alias/aws/sns`, the failure is silent, and a customer-managed key
 costs $1 a month for an alert that carries no user data.
@@ -79,5 +80,22 @@ undercounts and never overcounts.
 **Metrics add about $1.50 a month** (four EMF metrics and the log-filter metric). X-Ray stays inside its free tier at this
 volume, and the dashboard is one of the three CloudWatch does not bill.
 
-**Alarm mail depends on someone confirming the subscription.** With `alert_email`
-unset the alarms exist and nobody is told. The runbook says so.
+**Alarm mail depends on someone confirming the subscription.** SNS delivers nothing
+until the link in the first mail is clicked. The runbook says so.
+
+## Amendment: the address moved to SSM Parameter Store
+
+**2026-11-02.** The address first came from the variable `alert_email`, fed by an
+untracked `terraform.tfvars`, and an empty value meant "no subscription". The first
+pull-request plan after deployment showed what that costs: CI has no such file, so
+its plan proposed destroying the confirmed subscription. CI never applies, but an
+apply from any clone without the file would have done exactly that, and the alarms
+would have kept firing at nobody without a single error.
+
+The address is now the SSM String parameter `/wildlens/dev/alert-email`, created by
+hand once, as the test user's password already is, and read with a data source. A
+missing parameter now **fails the plan**, which is the right failure: loud, and
+before anything changes. The provider marks the value sensitive, so it stays out of
+plan output in a public repository, and the read-only CI role can read it without a
+KMS grant. A `moved` block carries the confirmed subscription across the change of
+address in state, so it is not recreated and does not need confirming again.
