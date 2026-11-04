@@ -64,10 +64,12 @@ class UnreadableVideo(Exception): ...
 def sample_frames(path: Path, out_dir: Path, max_frames: int = MAX_FRAMES) -> SampledVideo
 def max_n(per_frame: list[dict[str, int]]) -> dict[str, int]
 def busiest_frame(per_frame: list[dict[str, int]]) -> int   # index into per_frame
+def effective_fps(reported: float) -> tuple[float, bool]     # (fps to use, assumed?)
 ```
 
 - `sample_frames` reads the file sequentially with `cv2.VideoCapture`, keeping one frame every `round(fps)` frames (`grab()` for the skipped ones, `retrieve()` for the kept), and writes each kept frame as a JPEG. Sequential reading, not seeking, because seeking is inaccurate in some AVI and MOV files.
 - A frame rate of 0, negative or NaN uses `FALLBACK_FPS` and sets `fps_assumed`.
+- `duration_sec` is `frame count / fps` only when the frame rate was reported and the frame count is finite and positive; otherwise `None`. A renamed JPEG reports a frame count of about -9.2e18.
 - It raises `UnreadableVideo` if the capture does not open or yields no frame at all. A read that fails part-way through ends sampling; the frames already kept are returned.
 - `max_n([])` is `{}`. `busiest_frame` requires a non-empty list.
 
@@ -101,7 +103,7 @@ The `context` is passed from `handler` into `process_object`; the image path ign
 | Less than 60 s left before a frame | Partial result recorded, `video truncated` logged, `frameCount` is the frames tagged |
 | Time ran out before the first frame | `FAILED`, no retry (a retry would meet the same cold start) |
 | S3, DynamoDB or model-bucket error | Raised, retried by SQS, as for images |
-| An image renamed to `.mp4` | OpenCV cannot read it as video: `FAILED` |
+| An image renamed to `.mp4` | FFmpeg probes the content, not the name, and reads it as a one-frame video (measured: OpenCV 5.0.0 opens a renamed JPEG, reports 25 fps and a nonsense frame count). It is tagged as a video of one frame with no `durationSec`. Harmless: the tags are correct |
 | `.mp4` sent to `/search/byfile` | 400, "search by file accepts images only" |
 
 ---
@@ -149,8 +151,9 @@ No Terraform change is expected:
 - `services/process/tests/test_video.py` generates small videos inside the test with `cv2.VideoWriter`, so no sample file is committed:
   - a 5-second video at 10 fps yields 5 frames;
   - a 90-second video yields 60 frames;
-  - a container reporting 0 fps still yields frames and sets `fps_assumed`;
-  - a file of random bytes raises `UnreadableVideo`;
+  - a reported frame rate of 0, negative, NaN or infinite falls back to 30 fps and is flagged as assumed (tested on the pure helper `effective_fps`, since `cv2.VideoWriter` cannot write such a file);
+  - a file of random bytes, and a missing file, raise `UnreadableVideo`;
+  - a JPEG renamed to `.mp4` yields one frame and no duration;
   - `max_n` of several frames, of no frames, of frames with disjoint species;
   - `busiest_frame` picks the busiest, the earliest on a tie, and frame 0 when all are empty.
 - `services/process/tests/test_app_video.py`, with mocked models:
