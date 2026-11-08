@@ -249,3 +249,53 @@ def test_a_sample_with_no_animals_returns_nothing_rather_than_everything(monkeyp
 
     assert body["results"] == []
     assert "note" in body
+
+
+# --- video (Phase 12) ---------------------------------------------------------
+
+
+def test_a_video_hit_carries_its_type_frame_count_and_duration():
+    hit = search.readable(
+        item(
+            "v",
+            {"dingo": 2},
+            type={"S": "video"},
+            frameCount={"N": "42"},
+            durationSec={"N": "75.2"},
+        )
+    )
+    assert hit["type"] == "video"
+    assert hit["frameCount"] == 42
+    assert hit["durationSec"] == 75.2
+
+
+def test_an_image_hit_has_no_frame_fields():
+    hit = search.readable(item("i", {"dingo": 1}, type={"S": "image"}))
+    assert hit["type"] == "image"
+    assert "frameCount" not in hit
+    assert "durationSec" not in hit
+
+
+def test_the_scan_names_type_through_an_alias(monkeypatch):
+    """type is a DynamoDB reserved word: projecting it bare fails the whole scan
+    with a ValidationException, so every search would return 500."""
+    seen = {}
+
+    class Recording:
+        def paginate(self, **kwargs):
+            seen.update(kwargs)
+            return iter([])
+
+    monkeypatch.setattr(search.dynamodb, "get_paginator", lambda _name: Recording())
+    list(search.done_records())
+
+    assert "#t" in seen["ProjectionExpression"]
+    assert seen["ExpressionAttributeNames"]["#t"] == "type"
+    assert "frameCount" in seen["ProjectionExpression"]
+
+
+@pytest.mark.parametrize("ext", ["mp4", "MOV", "avi"])
+def test_byfile_refuses_a_video_sample(ext):
+    result = search.handler(event("/search/byfile", {"file": "AAAA", "ext": ext}), None)
+    assert result["statusCode"] == 400
+    assert "images only" in json.loads(result["body"])["error"]

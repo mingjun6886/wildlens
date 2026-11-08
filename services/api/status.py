@@ -37,7 +37,16 @@ table = boto3.resource("dynamodb").Table(TABLE_NAME)
 # Fields returned to the client. Listing them rather than returning the record
 # wholesale keeps internal columns - ttl, the timing measurements, coldStart -
 # out of the API, so they can change without being a breaking change.
-PUBLIC_FIELDS = ("status", "type", "tags", "uploadedBy", "createdAt", "errorReason")
+PUBLIC_FIELDS = (
+    "status",
+    "type",
+    "tags",
+    "uploadedBy",
+    "createdAt",
+    "errorReason",
+    "frameCount",
+    "durationSec",
+)
 
 
 @handle_errors
