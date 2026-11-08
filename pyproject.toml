@@ -33,6 +33,7 @@ known-first-party = [
   "tagger",
   "tracing",
   "upload",
+  "video",
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -39,9 +39,11 @@ jobs:
         # imports and no test covers. The CPU build of torch is a few hundred
         # megabytes rather than the gigabytes of the default Linux wheel.
         # Versions match ml/requirements.txt.
+        # services/process/tests/test_video.py needs cv2; the headless build is
+        # the one the Lambda image uses, pinned to the same version.
         run: |
           pip install -r requirements-dev.txt
-          pip install pillow==12.3.0 numpy==2.4.6
+          pip install pillow==12.3.0 numpy==2.4.6 opencv-python-headless==5.0.0.93
           pip install torch==2.14.0 torchvision==0.29.0 \
             --index-url https://download.pytorch.org/whl/cpu
 
