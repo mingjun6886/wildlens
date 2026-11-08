@@ -140,11 +140,28 @@ so there is time to investigate but it will not sit there forever.
 |---|---|---|
 | `not a readable image: ...` | The bytes are not an image PIL can open. Truncated upload, or a renamed file | Tell the client. Re-uploading the same bytes will fail identically |
 | `content does not match the key it was stored under` | The digest the client claimed is not the digest of what arrived. A client-side hashing bug, or a substitution attempt | Check whether the same caller does this repeatedly. See ADR 6 |
-| `unsupported file type: .mp4` | Video, which arrives in Phase 12 | Expected until then |
+| `unsupported file type: ...` | An extension the pipeline does not handle (the upload API refuses these, so this means a direct `aws s3 cp`) | Expected; nothing to do |
+| `not a readable video: ...` | OpenCV could not read any frame. Truncated upload, or a codec the bundled FFmpeg lacks | Try playing the file locally. Re-uploading the same bytes will fail identically |
+| `ran out of time before tagging any frame` | The invocation started too close to its deadline to tag even one frame | Rare. Re-upload; check `ColdStartDuration` on the dashboard |
 | `object is empty` | Zero bytes | Client-side bug; the upload function rejects `size: 0`, so this means the PUT sent nothing |
 
 Retrying is allowed: the upload function issues a new URL for a `FAILED` record,
 because a permanent failure is about those bytes, not about that digest forever.
+
+## A video has fewer frames than expected
+
+**Symptom:** a video is `DONE` but `frameCount` is below `min(60, durationSec)`.
+
+The time guard stopped tagging with less than 60 s of the invocation left, and the
+result covers the frames tagged so far (ADR 13). Confirm in Logs Insights on the
+`process` log group:
+
+    fields @timestamp, fileId, framesTagged, framesSampled
+    | filter msg = "video truncated"
+    | sort @timestamp desc
+
+Frequent truncation means inference has slowed: compare `InferenceDuration` on the
+dashboard with the ~7 s per frame measured in Phase 12.
 
 ---
 

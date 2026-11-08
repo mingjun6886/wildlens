@@ -222,6 +222,8 @@ This preserves swapping models without a code change — set an environment vari
 
 Sample one frame per second, **capped at 60 frames**. Tag each frame and sum the per-species counts. The thumbnail comes from the first frame. Longer video is truncated, and `frameCount` records how many frames were actually processed.
 
+> **Superseded in part (Phase 12, ADR 13):** counts are MaxN, the largest count of each species in any one frame, not the sum; the thumbnail comes from the busiest frame, not the first; and a time guard can end tagging early, in which case `frameCount` says how many frames were tagged.
+
 ### 6.4 Accuracy evaluation
 
 `ml/eval/run_eval.py` runs the pipeline over the 26 test images, compares against `ml/eval/answer_key.yaml`, and emits:
