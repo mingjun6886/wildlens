@@ -16,7 +16,6 @@ const STAGE_TEXT = {
   duplicate: "already in the collection",
   joining: "already being processed",
   sending: "sending to storage",
-  video: "video: this can take several minutes",
   pending: "queued",
   processing: "identifying species",
   done: "done",

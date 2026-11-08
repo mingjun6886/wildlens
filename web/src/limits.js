@@ -29,9 +29,12 @@ export function checkSize(file) {
  * about 7 s a frame for up to 60 frames, under the function's 900 s timeout, plus
  * a cold start and any queue: 16 minutes covers the worst legitimate case, and a
  * 10 s interval keeps that to under a hundred requests.
+ *
+ * `hint` is shown beside every status line rather than as a stage of its own,
+ * because the first poll replaces a stage at once and a video's wait is minutes.
  */
 export function pollPlan(name) {
   return isVideo(name)
-    ? { intervalMs: 10_000, timeoutMs: 16 * 60_000 }
-    : { intervalMs: 2000, timeoutMs: 120_000 };
+    ? { intervalMs: 10_000, timeoutMs: 16 * 60_000, hint: "video: this can take several minutes" }
+    : { intervalMs: 2000, timeoutMs: 120_000, hint: "" };
 }
