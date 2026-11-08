@@ -73,11 +73,17 @@ PROCESS_FUNCTION = os.environ["PROCESS_FUNCTION"]
 # for. The whole item is read and billed either way. What it reduces is bytes over
 # the wire, and therefore how many items fit in the 1 MB page below — which is the
 # thing that actually matters here.
-PROJECTION = "fileId, #s, tags, s3Key, thumbKey, uploadedBy, createdAt"
+# #t because type is a DynamoDB reserved word, as status is.
+PROJECTION = "fileId, #s, #t, tags, s3Key, thumbKey, uploadedBy, createdAt, frameCount, durationSec"
 
 # Upper bound on one response. A hundred signed URLs is already a large payload,
 # and a client that needs more needs pagination rather than a bigger page.
 MAX_RESULTS = 100
+
+# /search/byfile tags the sample synchronously, inside API Gateway's 29 s limit
+# (ADR 5). Even a short video takes minutes, so it is refused with a reason rather
+# than left to time out as a 503 that says "retry".
+VIDEO_EXTENSIONS = {"mp4", "mov", "avi"}
 
 # The binding limit is Lambda's, not API Gateway's, and getting that wrong is why
 # the first version of this number was too generous.
@@ -94,8 +100,9 @@ MAX_RESULTS = 100
 # leaves room for the event wrapper. Checked client-side too, because a request
 # refused by the gateway never reaches this code and the caller gets a bare 413.
 #
-# Unrelated to the 25 MB upload limit: that path sends bytes straight to S3 and
-# never through the API, which is precisely why it can be larger.
+# Unrelated to the upload limits (25 MB for an image, 100 MB for a video): that
+# path sends bytes straight to S3 and never through the API, which is precisely
+# why it can be larger.
 MAX_QUERY_BYTES = 4 * 1024 * 1024
 
 
@@ -117,7 +124,7 @@ def done_records():
         TableName=TABLE_NAME,
         ProjectionExpression=PROJECTION,
         FilterExpression="#s = :done",
-        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeNames={"#s": "status", "#t": "type"},
         ExpressionAttributeValues={":done": {"S": "DONE"}},
     )
     for page in pages:
@@ -134,13 +141,18 @@ def counts(item: dict) -> dict[str, int]:
 def readable(item: dict) -> dict:
     """The shape a client receives for one hit."""
     record = {key: plain(_unwrap(value)) for key, value in item.items()}
-    return {
+    hit = {
         "fileId": record["fileId"],
+        "type": record.get("type", "image"),
         "tags": counts(item),
         "uploadedBy": record.get("uploadedBy"),
         "createdAt": record.get("createdAt"),
         **urls_for(record),
     }
+    for name in ("frameCount", "durationSec"):
+        if name in record:
+            hit[name] = record[name]
+    return hit
 
 
 def _unwrap(value: dict):
@@ -291,7 +303,11 @@ def by_file(body, correlation: str) -> dict:
     if not isinstance(body, dict) or "file" not in body:
         raise ClientError(400, 'body must be {"file": "<base64>", "ext": "jpg"}')
 
-    query_tags = tags_of_query_file(body["file"], str(body.get("ext", "jpg")), correlation)
+    extension = str(body.get("ext", "jpg")).lower().lstrip(".")
+    if extension in VIDEO_EXTENSIONS:
+        raise ClientError(400, "search by file accepts images only")
+
+    query_tags = tags_of_query_file(body["file"], extension, correlation)
 
     if not query_tags:
         # No animals found, so every file is trivially a superset. Returning

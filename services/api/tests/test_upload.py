@@ -87,23 +87,41 @@ def test_a_leading_dot_on_the_extension_is_tolerated():
     assert extension == "jpg"
 
 
-def test_video_is_rejected_until_phase_12():
-    """Accepting it would create a PENDING record that can only ever fail, and the
-    caller would learn that twenty seconds later instead of immediately."""
+@pytest.mark.parametrize(
+    ("ext", "content_type"),
+    [("mp4", "video/mp4"), ("mov", "video/quicktime"), ("avi", "video/x-msvideo")],
+)
+def test_each_video_container_is_accepted_with_its_content_type(table, ext, content_type):
+    body = json.loads(upload.handler(request_event(valid_body(ext=ext)), None)["body"])
+    assert body["requiredHeaders"]["Content-Type"] == content_type
+
+
+def test_an_unknown_container_is_still_rejected():
     with pytest.raises(common.ClientError) as raised:
-        upload.validated_request(valid_body(ext="mp4"))
+        upload.validated_request(valid_body(ext="mkv"))
     assert "ext must be one of" in raised.value.message
+
+
+def test_a_video_may_be_up_to_100_mb():
+    assert upload.validated_request(valid_body(ext="mp4", size=upload.MAX_VIDEO_BYTES))
+
+
+def test_a_video_over_100_mb_is_rejected_and_told_the_video_limit():
+    with pytest.raises(common.ClientError) as raised:
+        upload.validated_request(valid_body(ext="mp4", size=upload.MAX_VIDEO_BYTES + 1))
+    assert "100 MB" in raised.value.message
+
+
+def test_an_image_keeps_the_25_mb_limit():
+    """The video limit must not leak to images: a 26 MB photograph is still refused."""
+    with pytest.raises(common.ClientError) as raised:
+        upload.validated_request(valid_body(size=upload.MAX_IMAGE_BYTES + 1))
+    assert "25 MB" in raised.value.message
 
 
 def test_a_zero_byte_file_is_rejected():
     with pytest.raises(common.ClientError):
         upload.validated_request(valid_body(size=0))
-
-
-def test_a_file_over_the_limit_is_rejected():
-    with pytest.raises(common.ClientError) as raised:
-        upload.validated_request(valid_body(size=upload.MAX_BYTES + 1))
-    assert "exceeds" in raised.value.message
 
 
 def test_a_non_numeric_size_is_a_400_not_a_crash():
