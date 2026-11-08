@@ -43,6 +43,15 @@ test("a video may be four times larger than an image", () => {
 });
 
 test("video is polled less often and for longer than an image", () => {
-  assert.deepEqual(pollPlan("a.jpg"), { intervalMs: 2000, timeoutMs: 120_000 });
-  assert.deepEqual(pollPlan("a.mov"), { intervalMs: 10_000, timeoutMs: 16 * 60_000 });
+  assert.equal(pollPlan("a.jpg").intervalMs, 2000);
+  assert.equal(pollPlan("a.jpg").timeoutMs, 120_000);
+  assert.equal(pollPlan("a.mov").intervalMs, 10_000);
+  assert.equal(pollPlan("a.mov").timeoutMs, 16 * 60_000);
+});
+
+test("a video carries a wait hint for every progress line; an image has none", () => {
+  // The hint rides on each status update rather than being its own stage, because
+  // the first poll replaces a stage at once and the wait is minutes long.
+  assert.match(pollPlan("a.avi").hint, /several minutes/);
+  assert.equal(pollPlan("a.png").hint, "");
 });

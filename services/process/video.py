@@ -23,6 +23,12 @@ MAX_FRAMES = 60
 # and a wrong guess only changes which second each kept frame comes from.
 FALLBACK_FPS = 30.0
 
+# Above this a reported rate is a container time base, not a frame rate: some AVI,
+# MOV and variable-rate files report 1000 or 90000. Trusted, it would keep one
+# frame a minute and tag a 60 s clip from a single frame. 240 is the fastest
+# common high-speed camera mode.
+MAX_PLAUSIBLE_FPS = 240.0
+
 # Frames are inputs to the detector, not thumbnails, so quality stays high.
 FRAME_JPEG_QUALITY = 95
 
@@ -40,7 +46,7 @@ class SampledVideo:
 
 def effective_fps(reported: float) -> tuple[float, bool]:
     """The frame rate to sample by, and whether it was assumed."""
-    if not math.isfinite(reported) or reported <= 0:
+    if not math.isfinite(reported) or reported <= 0 or reported > MAX_PLAUSIBLE_FPS:
         return FALLBACK_FPS, True
     return reported, False
 
