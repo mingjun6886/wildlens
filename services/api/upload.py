@@ -43,9 +43,8 @@ from common import (
 
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
 
-# Image types the tagging pipeline can open. Video arrives in Phase 12; until then
-# accepting an .mp4 would produce a PENDING record that can only ever fail, so the
-# rejection belongs here where it can be explained.
+# Types the tagging pipeline can open. Video was refused until Phase 12, because
+# a PENDING record that can only fail is worse than an immediate 400.
 ALLOWED_EXTENSIONS = {
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
@@ -53,14 +52,20 @@ ALLOWED_EXTENSIONS = {
     "gif": "image/gif",
     "bmp": "image/bmp",
     "webp": "image/webp",
+    "mp4": "video/mp4",
+    "mov": "video/quicktime",
+    "avi": "video/x-msvideo",
 }
+VIDEO_EXTENSIONS = {"mp4", "mov", "avi"}
 
-# Upper bound on one upload. A camera-trap photograph is a few megabytes; 25 is
-# generous and still bounds what a single request can cost.
-MAX_BYTES = 25 * 1024 * 1024
+# Upper bounds on one upload. A camera-trap photograph is a few megabytes; 25 is
+# generous. A minute of 1080p trap or phone video is 50 to 130 MB, and only the
+# first minute is examined, so 100 bounds what one request can cost.
+MAX_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
 
 # How long the presigned URL is valid. Long enough for a slow connection to finish
-# a 25 MB file, short enough that a URL copied out of a browser is not a standing
+# a 100 MB video, short enough that a URL copied out of a browser is not a standing
 # invitation to write into the bucket.
 UPLOAD_URL_TTL = 900
 
@@ -110,8 +115,11 @@ def validated_request(body: dict) -> tuple[str, str, int]:
 
     if size <= 0:
         raise ClientError(400, "size must be greater than zero")
-    if size > MAX_BYTES:
-        raise ClientError(400, f"size exceeds the {MAX_BYTES // (1024 * 1024)} MB limit")
+    is_video = extension in VIDEO_EXTENSIONS
+    limit = MAX_VIDEO_BYTES if is_video else MAX_IMAGE_BYTES
+    if size > limit:
+        kind = "a video" if is_video else "an image"
+        raise ClientError(400, f"size exceeds the {limit // (1024 * 1024)} MB limit for {kind}")
 
     return sha256, extension, size
 
