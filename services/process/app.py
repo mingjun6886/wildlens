@@ -20,8 +20,11 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import time
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import unquote_plus
@@ -36,6 +39,7 @@ from model_loader import artefact_bucket, artefact_version, get_models
 from notify import publish_tags
 from tagger import tag_image
 from tracing import span
+from video import VIDEO_SUFFIXES, UnreadableVideo, busiest_frame, max_n, sample_frames
 
 # True until the first invocation finishes. A warm invocation reuses the same
 # execution environment, and therefore the same module globals, so this flag
@@ -61,6 +65,29 @@ PENDING_TTL_SECONDS = 3600
 # upload by a long way — but it still expires, because a permanent failure is not
 # worth keeping forever. See record_failure.
 FAILED_TTL_SECONDS = 7 * 24 * 3600
+
+# Stop tagging a video when less than this much of the invocation remains. Enough
+# to make the thumbnail, write the record and publish, which take about a second;
+# the rest is margin. Without the guard a slow video times out, is retried three
+# times and lands in the dead-letter queue with nothing recorded.
+VIDEO_TIME_MARGIN_MS = 60_000
+
+
+def _no_deadline() -> int:
+    """The clock for a call with no Lambda context: tests and local runs."""
+    return 2**31
+
+
+@dataclass
+class Tagged:
+    """What tagging one file produced, image or video, before it is recorded."""
+
+    type: str
+    tags: dict[str, int]
+    model_load_ms: int
+    inference_ms: int
+    thumb_key: str
+    extra: dict = field(default_factory=dict)
 
 
 class PermanentFailure(Exception):
@@ -203,14 +230,17 @@ def emit_model_metrics(
         emit("ColdStartDuration", total_ms, "Milliseconds")
 
 
-def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, int]:
-    """Tag a local file. Returns (tags, model_load_ms, inference_ms)."""
-    version = artefact_version()
-
+def load_models() -> tuple[tuple, int]:
+    """The cached models and how long getting them took (0-ish when warm)."""
     started = time.time()
     with span("model-load"):
-        detector, species_model, classes, label_map = get_models(s3, artefact_bucket(), version)
-    model_load_ms = int((time.time() - started) * 1000)
+        models = get_models(s3, artefact_bucket(), artefact_version())
+    return models, int((time.time() - started) * 1000)
+
+
+def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, int]:
+    """Tag a local file. Returns (tags, model_load_ms, inference_ms)."""
+    (detector, species_model, classes, label_map), model_load_ms = load_models()
 
     # Readability was established by the caller. Note that tagger.tag_images
     # swallows a failed open and returns no tags rather than raising, so an
@@ -229,14 +259,118 @@ def load_and_tag(path: Path, correlation_id: str) -> tuple[dict[str, int], int, 
     return tags, model_load_ms, inference_ms
 
 
-def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool) -> dict:
+def store_thumbnail(source: Path, thumb_key: str) -> None:
+    """Make a JPEG thumbnail of `source` and upload it under `thumb_key`."""
+    thumb_path = TMP / f"thumb-{uuid.uuid4().hex}.jpg"
+    try:
+        with span("thumbnail"):
+            make_thumbnail(source, thumb_path)
+        # ContentType is set explicitly because S3 does not infer it. Without
+        # it the object is served as binary/octet-stream, which a browser may
+        # still render by sniffing but will offer to download rather than
+        # display, and which gives the wrong type to anything that trusts the
+        # header. make_thumbnail always writes JPEG, whatever came in.
+        s3.upload_file(
+            str(thumb_path),
+            os.environ["THUMB_BUCKET"],
+            thumb_key,
+            ExtraArgs={"ContentType": "image/jpeg"},
+        )
+    finally:
+        thumb_path.unlink(missing_ok=True)
+
+
+def tag_still(local_path: Path, file_id: str, suffix: str, correlation_id: str) -> Tagged:
+    """Verify, tag and thumbnail one image."""
+    # Verify readability before spending anything on inference. PIL reads
+    # only the header, so this costs microseconds and saves both a
+    # multi-second inference run and a thumbnail step that would fail
+    # anyway. Checking once, here, also means a corrupt file is classified
+    # in one place rather than raising from whichever component happens to
+    # open it first - which is how it was misclassified as transient and
+    # retried three times.
+    try:
+        with Image.open(local_path) as probe:
+            probe.verify()
+    except (UnidentifiedImageError, OSError) as error:
+        raise PermanentFailure(f"not a readable image: {error}") from error
+
+    tags, model_load_ms, inference_ms = load_and_tag(local_path, correlation_id)
+    thumb_key = f"{file_id}{suffix}"
+    store_thumbnail(local_path, thumb_key)
+    return Tagged("image", tags, model_load_ms, inference_ms, thumb_key)
+
+
+def tag_video(
+    local_path: Path, file_id: str, correlation_id: str, remaining_ms: Callable[[], int]
+) -> Tagged:
+    """Sample, tag frame by frame under the time guard, and combine with MaxN.
+
+    Frames are tagged one at a time with tag_image rather than in one tag_images
+    call, because tag_images detects every frame before classifying any, and the
+    time guard could not interrupt it.
+    """
+    frame_dir = TMP / f"frames-{uuid.uuid4().hex}"
+    try:
+        try:
+            sampled = sample_frames(local_path, frame_dir)
+        except UnreadableVideo as error:
+            raise PermanentFailure(f"not a readable video: {error}") from error
+        if sampled.fps_assumed:
+            log_event("video frame rate assumed", correlation_id, fileId=file_id)
+
+        (detector, species_model, classes, label_map), model_load_ms = load_models()
+
+        per_frame: list[dict[str, int]] = []
+        started = time.time()
+        for frame in sampled.frames:
+            if remaining_ms() < VIDEO_TIME_MARGIN_MS:
+                log_event(
+                    "video truncated",
+                    correlation_id,
+                    fileId=file_id,
+                    framesTagged=len(per_frame),
+                    framesSampled=len(sampled.frames),
+                )
+                break
+            with span("tagging"):
+                per_frame.append(tag_image(str(frame), detector, species_model, classes, label_map))
+        tagging_ms = int((time.time() - started) * 1000)
+
+        if not per_frame:
+            # A retry would meet the same cold start and the same clock.
+            raise PermanentFailure("ran out of time before tagging any frame")
+
+        thumb_key = f"{file_id}.jpg"
+        store_thumbnail(sampled.frames[busiest_frame(per_frame)], thumb_key)
+
+        extra = {"frameCount": Decimal(len(per_frame))}
+        if sampled.duration_sec is not None:
+            extra["durationSec"] = Decimal(str(sampled.duration_sec))
+
+        # The mean per frame, so InferenceDuration keeps meaning "time to tag one
+        # image" and the dashboard's percentiles stay comparable with images.
+        return Tagged(
+            "video", max_n(per_frame), model_load_ms, tagging_ms // len(per_frame), thumb_key, extra
+        )
+    finally:
+        shutil.rmtree(frame_dir, ignore_errors=True)
+
+
+def process_object(
+    bucket: str,
+    key: str,
+    correlation_id: str,
+    cold_start: bool,
+    remaining_ms: Callable[[], int] = _no_deadline,
+) -> dict:
     """Download, identify, tag, thumbnail and record one object."""
     started = time.time()
     suffix = Path(key).suffix.lower()
 
-    if suffix not in IMAGE_SUFFIXES:
-        # Video arrives in Phase 12. Until then an unknown suffix is a file this
-        # system cannot process, and no number of retries will change that.
+    if suffix not in IMAGE_SUFFIXES and suffix not in VIDEO_SUFFIXES:
+        # A file this system cannot process, and no number of retries will change
+        # that.
         raise PermanentFailure(f"unsupported file type: {suffix or '(none)'}")
 
     local_path = TMP / f"src-{uuid.uuid4().hex}{suffix}"
@@ -294,38 +428,10 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             return {"fileId": file_id, "skipped": "already DONE"}
 
         try:
-
-            # Verify readability before spending anything on inference. PIL reads
-            # only the header, so this costs microseconds and saves both a
-            # multi-second inference run and a thumbnail step that would fail
-            # anyway. Checking once, here, also means a corrupt file is classified
-            # in one place rather than raising from whichever component happens to
-            # open it first - which is how it was misclassified as transient and
-            # retried three times.
-            try:
-                with Image.open(local_path) as probe:
-                    probe.verify()
-            except (UnidentifiedImageError, OSError) as error:
-                raise PermanentFailure(f"not a readable image: {error}") from error
-
-            tags, model_load_ms, inference_ms = load_and_tag(local_path, correlation_id)
-
-            thumb_key = f"{file_id}{suffix}"
-            thumb_path = TMP / f"thumb-{uuid.uuid4().hex}.jpg"
-            with span("thumbnail"):
-                make_thumbnail(local_path, thumb_path)
-            # ContentType is set explicitly because S3 does not infer it. Without
-            # it the object is served as binary/octet-stream, which a browser may
-            # still render by sniffing but will offer to download rather than
-            # display, and which gives the wrong type to anything that trusts the
-            # header. make_thumbnail always writes JPEG, whatever came in.
-            s3.upload_file(
-                str(thumb_path),
-                os.environ["THUMB_BUCKET"],
-                thumb_key,
-                ExtraArgs={"ContentType": "image/jpeg"},
-            )
-            thumb_path.unlink(missing_ok=True)
+            if suffix in VIDEO_SUFFIXES:
+                tagged = tag_video(local_path, file_id, correlation_id, remaining_ms)
+            else:
+                tagged = tag_still(local_path, file_id, suffix, correlation_id)
         except PermanentFailure as failure:
             record_failure(file_id, correlation_id, str(failure))
             raise
@@ -334,10 +440,10 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
         record_success(
             file_id,
             correlation_id,
-            type="image",
+            type=tagged.type,
             s3Key=key,
-            thumbKey=thumb_key,
-            tags={name: Decimal(count) for name, count in tags.items()},
+            thumbKey=tagged.thumb_key,
+            tags={name: Decimal(count) for name, count in tagged.tags.items()},
             # uploadedBy is deliberately absent. The upload function wrote it onto
             # the PENDING record from a Cognito claim, and this update must not
             # overwrite it — which is exactly what it used to do, replacing a
@@ -348,30 +454,42 @@ def process_object(bucket: str, key: str, correlation_id: str, cold_start: bool)
             # honest answer: nobody authenticated for it.
             createdAt=Decimal(int(time.time())),
             modelVersion=artefact_version(),
-            modelLoadMs=Decimal(model_load_ms),
+            modelLoadMs=Decimal(tagged.model_load_ms),
             processingMs=Decimal(processing_ms),
             coldStart=cold_start,
+            **tagged.extra,
         )
         # Metrics follow the record and precede the publish, so neither can be lost to
         # the other failing. TagsPerFile is emitted for an empty result too: a file
         # with no animals is still a file that was processed.
-        emit_model_metrics(model_load_ms, inference_ms, cold_start, processing_ms)
-        emit("TagsPerFile", sum(tags.values()), "Count")
+        emit_model_metrics(tagged.model_load_ms, tagged.inference_ms, cold_start, processing_ms)
+        emit("TagsPerFile", sum(tagged.tags.values()), "Count")
         # After the record is written, not before: the tags are the product and the
         # email is a side effect. publish_tags never raises, so a failure here
         # cannot send the message back to SQS, where claim() would skip it as DONE
         # and the notification would be lost regardless.
-        publish_tags(sns, os.environ.get("TAGS_TOPIC_ARN", ""), file_id, tags, correlation_id)
-        return {"fileId": file_id, "tags": tags, "inferenceMs": inference_ms}
+        publish_tags(
+            sns, os.environ.get("TAGS_TOPIC_ARN", ""), file_id, tagged.tags, correlation_id
+        )
+        return {
+            "fileId": file_id,
+            "type": tagged.type,
+            "tags": tagged.tags,
+            "inferenceMs": tagged.inference_ms,
+        }
     finally:
         local_path.unlink(missing_ok=True)
 
 
-def handler(event, _context):
+def handler(event, context):
     global _COLD_START
     handler_started = time.time()
     cold_start = _COLD_START
     _COLD_START = False
+
+    # The video path stops tagging before the invocation runs out. A direct call
+    # without a context (tests, local runs) has no deadline.
+    remaining_ms = getattr(context, "get_remaining_time_in_millis", None) or _no_deadline
 
     # --- query mode: tag bytes and discard them -----------------------------
     #
@@ -410,7 +528,9 @@ def handler(event, _context):
     # --- direct invocation, used for testing --------------------------------
     if "bucket" in event and "key" in event:
         correlation_id = event.get("correlationId") or str(uuid.uuid4())
-        return process_object(event["bucket"], event["key"], correlation_id, cold_start)
+        return process_object(
+            event["bucket"], event["key"], correlation_id, cold_start, remaining_ms=remaining_ms
+        )
 
     # --- queue records ------------------------------------------------------
     #
@@ -432,7 +552,7 @@ def handler(event, _context):
             key = unquote_plus(s3_record["s3"]["object"]["key"])
 
             try:
-                process_object(bucket, key, correlation_id, cold_start)
+                process_object(bucket, key, correlation_id, cold_start, remaining_ms=remaining_ms)
                 cold_start = False
             except PermanentFailure as failure:
                 # Recorded as FAILED already. Deleting the message stops a file

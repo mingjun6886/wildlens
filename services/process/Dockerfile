@@ -106,7 +106,8 @@ RUN pip install --no-cache-dir --no-deps onnx2torch
 # X11 library absent from Lambda. The headless build exposes the same cv2
 # module without it. --no-deps so that replacing cv2 does not move numpy and
 # break the scipy ABI compiled against it.
-RUN pip install --no-cache-dir --force-reinstall --no-deps opencv-python-headless
+# Pinned because CI installs the same version to run the video tests (Phase 12).
+RUN pip install --no-cache-dir --force-reinstall --no-deps "opencv-python-headless==5.0.0.93"
 
 # --- Step 7: X-Ray SDK -------------------------------------------------------
 #
@@ -131,6 +132,17 @@ assert pb.__version__ == '3.20.3', 'protobuf pin moved: ' + pb.__version__; \
 print('verified:', torch.__version__, '| onnx', onnx.__version__, \
       '| protobuf', pb.__version__, '| cv2', cv2.__version__)"
 
+# Video (Phase 12) depends on the FFmpeg bundled in the OpenCV wheel. Write and
+# read back a small MP4 here, so a wheel without it fails the build rather than
+# every video upload.
+RUN python -c "\
+import cv2, numpy as np; \
+w = cv2.VideoWriter('/tmp/v.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 5.0, (64, 48)); \
+[w.write(np.zeros((48, 64, 3), np.uint8)) for _ in range(10)]; w.release(); \
+c = cv2.VideoCapture('/tmp/v.mp4'); \
+assert c.isOpened() and c.read()[0], 'cv2 cannot decode mp4'; \
+print('video decode verified')" && rm -f /tmp/v.mp4
+
 # --- Application code -------------------------------------------------------
 #
 # LAMBDA_TASK_ROOT is /var/task and is already on sys.path, so everything lands
@@ -145,5 +157,6 @@ COPY services/process/media_utils.py  ${LAMBDA_TASK_ROOT}/
 COPY services/process/notify.py       ${LAMBDA_TASK_ROOT}/
 COPY services/process/metrics.py      ${LAMBDA_TASK_ROOT}/
 COPY services/process/tracing.py      ${LAMBDA_TASK_ROOT}/
+COPY services/process/video.py        ${LAMBDA_TASK_ROOT}/
 
 CMD ["app.handler"]
