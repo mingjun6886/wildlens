@@ -15,13 +15,19 @@ import video
 # --- effective_fps -----------------------------------------------------------
 
 
-@pytest.mark.parametrize("reported", [0.0, -1.0, math.nan, math.inf])
+# 1000 and 90000 are container time bases that some AVI, MOV and variable-rate
+# files report as their frame rate; trusting them would keep one frame a minute.
+@pytest.mark.parametrize("reported", [0.0, -1.0, math.nan, math.inf, 1000.0, 90000.0])
 def test_an_unusable_frame_rate_falls_back_and_is_flagged(reported):
     assert video.effective_fps(reported) == (video.FALLBACK_FPS, True)
 
 
 def test_a_reported_frame_rate_is_used_as_is():
     assert video.effective_fps(25.0) == (25.0, False)
+
+
+def test_a_high_speed_camera_rate_is_still_trusted():
+    assert video.effective_fps(240.0) == (240.0, False)
 
 
 # --- sample_frames -----------------------------------------------------------

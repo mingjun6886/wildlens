@@ -10,7 +10,7 @@
 
 import { fileStatus, putBytes, reserveUpload } from "./api.js";
 import { extensionOf, sha256 } from "./hash.js";
-import { checkSize, isVideo, pollPlan } from "./limits.js";
+import { checkSize, pollPlan } from "./limits.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -54,9 +54,6 @@ export async function uploadFile(file, onProgress = () => {}) {
 
   onProgress({ stage: "sending", detail: `${(file.size / 1e6).toFixed(1)} MB to S3` });
   await putBytes(reservation.uploadUrl, file, reservation.requiredHeaders);
-  if (isVideo(file.name)) {
-    onProgress({ stage: "video", detail: "" });
-  }
 
   return pollUntilSettled(digest, onProgress, plan);
 }
@@ -79,7 +76,7 @@ async function pollUntilSettled(fileId, onProgress, plan) {
 
     if (record.status !== lastStatus) {
       lastStatus = record.status;
-      onProgress({ stage: record.status.toLowerCase(), detail: "" });
+      onProgress({ stage: record.status.toLowerCase(), detail: plan.hint });
     }
 
     if (record.status === "DONE" || record.status === "FAILED") {
