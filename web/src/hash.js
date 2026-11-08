@@ -49,7 +49,7 @@ export function extensionOf(file) {
  * is refused by API Gateway before any of this project's code runs, so the caller
  * would get a bare 413 with no explanation. The limit comes from Lambda's 6 MB
  * synchronous invocation payload, which has to hold the base64 body plus the event
- * API Gateway wraps around it — not from the 25 MB upload limit, which applies to
+ * API Gateway wraps around it — not from the upload limits, which apply to
  * a path that sends bytes straight to S3.
  */
 export const MAX_SAMPLE_BYTES = 4 * 1024 * 1024;
@@ -60,7 +60,7 @@ export async function toBase64(file) {
     throw new Error(
       `a sample must be under ${MAX_SAMPLE_BYTES / 1024 / 1024} MB; this one is ` +
         `${(file.size / 1024 / 1024).toFixed(1)} MB. ` +
-        `Upload it instead — uploads go straight to storage and allow 25 MB.`,
+        `Upload it instead — uploads go straight to storage and allow 25 MB for an image.`,
     );
   }
 

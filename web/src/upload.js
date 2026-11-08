@@ -10,15 +10,7 @@
 
 import { fileStatus, putBytes, reserveUpload } from "./api.js";
 import { extensionOf, sha256 } from "./hash.js";
-
-// Two seconds. Tagging takes six at best, so a faster poll only adds requests;
-// a slower one makes a warm upload feel sluggish.
-const POLL_INTERVAL_MS = 2000;
-
-// Two minutes. Long enough for the worst measured case - forty seconds of cold
-// start plus a queue holding other work - and short enough that a genuinely
-// stuck record is reported rather than polled forever.
-const POLL_TIMEOUT_MS = 120_000;
+import { checkSize, isVideo, pollPlan } from "./limits.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -29,6 +21,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * renders progress without this module touching the DOM.
  */
 export async function uploadFile(file, onProgress = () => {}) {
+  checkSize(file);
+  const plan = pollPlan(file.name);
+
   onProgress({ stage: "hashing", detail: `${(file.size / 1e6).toFixed(1)} MB` });
 
   const digest = await sha256(file);
@@ -54,17 +49,20 @@ export async function uploadFile(file, onProgress = () => {}) {
     // right: issuing a URL now would let the object be replaced under a running
     // worker.
     onProgress({ stage: "joining", detail: "already being processed" });
-    return pollUntilSettled(digest, onProgress);
+    return pollUntilSettled(digest, onProgress, plan);
   }
 
   onProgress({ stage: "sending", detail: `${(file.size / 1e6).toFixed(1)} MB to S3` });
   await putBytes(reservation.uploadUrl, file, reservation.requiredHeaders);
+  if (isVideo(file.name)) {
+    onProgress({ stage: "video", detail: "" });
+  }
 
-  return pollUntilSettled(digest, onProgress);
+  return pollUntilSettled(digest, onProgress, plan);
 }
 
-async function pollUntilSettled(fileId, onProgress) {
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
+async function pollUntilSettled(fileId, onProgress, plan) {
+  const deadline = Date.now() + plan.timeoutMs;
   let lastStatus = null;
 
   while (Date.now() < deadline) {
@@ -75,7 +73,7 @@ async function pollUntilSettled(fileId, onProgress) {
       // A 404 right after the PUT is normal for a moment: the notification and
       // the queue take a beat, and the record may not be readable yet.
       if (error.status !== 404) throw error;
-      await sleep(POLL_INTERVAL_MS);
+      await sleep(plan.intervalMs);
       continue;
     }
 
@@ -88,12 +86,13 @@ async function pollUntilSettled(fileId, onProgress) {
       return record;
     }
 
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(plan.intervalMs);
   }
 
   // Not a failure of the file - a failure to find out. Said plainly, because
-  // "still processing after two minutes" and "failed" need different responses.
+  // "still processing" and "failed" need different responses.
+  const minutes = Math.round(plan.timeoutMs / 60_000);
   throw new Error(
-    "still processing after two minutes. The record will settle; reload to check again.",
+    `still processing after ${minutes} minutes. The record will settle; reload to check again.`,
   );
 }

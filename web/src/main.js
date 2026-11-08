@@ -16,6 +16,7 @@ const STAGE_TEXT = {
   duplicate: "already in the collection",
   joining: "already being processed",
   sending: "sending to storage",
+  video: "video: this can take several minutes",
   pending: "queued",
   processing: "identifying species",
   done: "done",
@@ -62,7 +63,11 @@ function activityRow(file) {
       stage.textContent =
         record.status === "FAILED"
           ? `failed — ${record.errorReason ?? "unknown reason"}`
-          : describeTags(record.tags) + (record.wasDuplicate ? " · already had it" : "");
+          : describeTags(record.tags) +
+            (record.type === "video" && record.frameCount != null
+              ? ` · ${record.frameCount} frames`
+              : "") +
+            (record.wasDuplicate ? " · already had it" : "");
     },
     fail: (message) => {
       stage.className = "stage failed";
@@ -115,6 +120,14 @@ function renderResults(payload) {
         image.loading = "lazy";
         link.append(image);
         card.append(link);
+      }
+
+      if (record.type === "video") {
+        const badge = document.createElement("div");
+        badge.className = "badge";
+        badge.textContent =
+          record.frameCount != null ? `Video · ${record.frameCount} frames` : "Video";
+        card.append(badge);
       }
 
       const tags = document.createElement("div");
