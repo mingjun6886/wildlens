@@ -71,3 +71,37 @@ sample synchronously inside API Gateway's 29 s limit (ADR 5).
 - The headless OpenCV wheel is pinned (5.0.0.93) in both the image and CI, and
   the image build decodes a generated MP4, so a wheel without FFmpeg fails the
   build instead of every video upload.
+- Importing YOLOv5, which MegaDetector does when the detector loads, replaces
+  `cv2.imwrite` process-wide with a two-argument version. The first deployment
+  called `imwrite(path, image, params)`, so the first video in each environment
+  worked (sampling runs before the models load) and every later one failed with
+  a `TypeError`. Frames are now encoded with `cv2.imencode`, which YOLOv5 leaves
+  alone, and a test patches `imwrite` the same way. The unit tests could not see
+  this, because they never import YOLOv5; only a warm invocation on Lambda did.
+
+## Measured (2026-11-10, first deployment)
+
+One 18 s, 960x540, 30 fps clip of two deer, as MJPEG `.avi` (66 MB), H.264
+`.mp4` and H.264 `.mov` (4 MB each), plus 10 s and 5 s cuts of it:
+
+| Clip | Start | Frames | Processing | Per frame |
+|---|---|---|---|---|
+| 18 s `.avi` | cold | 19 | 222 s | 8.7 s |
+| 18 s `.mp4` | cold | 19 | 176 s | 6.2 s |
+| 18 s `.mov` | cold | 19 | 137 s | 6.5 s |
+| 10 s `.mp4` | cold | 11 | 108 s | 8.9 s |
+| 5 s `.mp4` | warm | 6 | 54 s | 8.9 s |
+
+- Per frame, 6.2 to 8.9 s, so a full 60-frame video takes about 6 to 9 minutes,
+  inside the 900 s timeout with the 60 s guard to spare. Loading the models cold
+  took 9 to 52 s. Upload to `DONE` for the 18 s clip was about 4 to 5 minutes.
+- Peak memory was 2911 MB of 3008 MB. Images already reach 2999 MB, so this is
+  not new with video, but there is no headroom left.
+- The X-Ray trace of a video shows one `tagging` subsegment per frame.
+- Tags were wrong for this clip: the species model knows 46 classes, mostly
+  Australian, and North American deer are not among them. The detector counted
+  two animals correctly, but the label changed from frame to frame (dingo,
+  fallow deer, cattle, birds), and per-species MaxN kept every label. Video makes
+  the classifier's forced choice (argmax with no confidence floor) more visible
+  than a single image does; a confidence floor or cross-frame voting would be a
+  separate decision.
