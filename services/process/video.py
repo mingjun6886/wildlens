@@ -85,12 +85,19 @@ def sample_frames(path: Path, out_dir: Path, max_frames: int = MAX_FRAMES) -> Sa
                 if not ok:
                     break
                 destination = out_dir / f"frame-{len(frames):03d}.jpg"
-                if not cv2.imwrite(
-                    str(destination), image, [cv2.IMWRITE_JPEG_QUALITY, FRAME_JPEG_QUALITY]
-                ):
-                    # Disk full or similar: not a property of the video, so it is
-                    # raised as an ordinary error and SQS retries it.
-                    raise OSError(f"could not write {destination}")
+                # imencode, not imwrite: importing YOLOv5 (the detector) replaces
+                # cv2.imwrite process-wide with a two-argument version, so on a warm
+                # invocation imwrite(path, image, params) raised TypeError and every
+                # video failed. imencode is left alone.
+                encoded_ok, encoded = cv2.imencode(
+                    ".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, FRAME_JPEG_QUALITY]
+                )
+                if not encoded_ok:
+                    # Not a property of the video, so it is raised as an ordinary
+                    # error and SQS retries it. A full disk raises OSError from
+                    # write_bytes itself, with the same effect.
+                    raise OSError(f"could not encode {destination}")
+                destination.write_bytes(encoded.tobytes())
                 frames.append(destination)
             index += 1
     finally:
