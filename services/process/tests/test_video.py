@@ -51,6 +51,22 @@ def test_frames_are_returned_in_time_order(make_video, tmp_path):
     assert levels[-1] - levels[0] > 30
 
 
+def test_sampling_survives_yolov5_replacing_cv2_imwrite(make_video, tmp_path, monkeypatch):
+    """Importing YOLOv5 (which MegaDetector does when the detector loads) replaces
+    cv2.imwrite process-wide with a two-argument version. On a warm Lambda the
+    detector is already loaded, so every video failed with a TypeError in Phase 12's
+    first deployment; only cold starts, which sample before loading, got through."""
+
+    def yolov5_imwrite(path, im):
+        return True  # writes nothing, like a replacement that ignores the call
+
+    monkeypatch.setattr(cv2, "imwrite", yolov5_imwrite)
+    clip = make_video("clip.avi", seconds=3, fps=10)
+    sampled = video.sample_frames(clip, tmp_path / "frames")
+    assert len(sampled.frames) == 3
+    assert all(cv2.imread(str(frame)) is not None for frame in sampled.frames)
+
+
 def test_an_mp4_is_sampled_too(make_video, tmp_path):
     clip = make_video("clip.mp4", seconds=3, fps=10)
     assert len(video.sample_frames(clip, tmp_path / "frames").frames) == 3
