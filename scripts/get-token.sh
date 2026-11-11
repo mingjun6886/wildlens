@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Print a Cognito ID token for the integration-test user.
 #
+#   export TEST_USERNAME=<the test user's sign-in address>
 #   TOKEN=$(./scripts/get-token.sh)
 #   curl -H "Authorization: $TOKEN" "$API/files/$FILE_ID"
 #
@@ -11,12 +12,15 @@
 # The password lives in SSM Parameter Store as a SecureString rather than in a
 # file here. Phase 10's CI reads the same parameter through its OIDC role, so
 # there is one copy of the credential and no path by which it reaches the repo.
+#
+# The username has no default for the same reason: it is a real address, and an
+# earlier version of this file published it in a public repository.
 
 set -euo pipefail
 
 ENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../infra/terraform/envs/dev" && pwd)"
 PARAM="${TOKEN_PARAM:-/wildlens/dev/test-user-password}"
-USERNAME="${TEST_USERNAME:-boiviemlava123@gmail.com}"
+USERNAME="${TEST_USERNAME:?set TEST_USERNAME to the sign-in address of the test user}"
 
 POOL_ID="$(terraform -chdir="$ENV_DIR" output -raw cognito_user_pool_id)"
 CLIENT_ID="$(terraform -chdir="$ENV_DIR" output -raw cognito_client_id)"
