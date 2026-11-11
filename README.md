@@ -5,6 +5,11 @@ uploaded from the browser, tagged with species and counts by a two-stage ML
 pipeline (MegaDetector, then a species classifier), and made searchable through
 a Cognito-protected REST API. All infrastructure is Terraform.
 
+**[▶ Try it live](https://d1y0xvoewbydft.cloudfront.net)** — choose **Sign in**,
+then **Sign up** with any email address, confirm the code you are sent, and drop
+a camera-trap photo or a short clip onto the page. It runs on a small AWS budget,
+so it may be offline at times; the recording below shows what it does.
+
 **[▶ Interactive architecture walkthrough](https://mingjun6886.github.io/wildlens/diagrams/pipeline.html)**
 — step through all thirteen stages of the ingest path, the queue semantics, and
 the cost guardrails.
