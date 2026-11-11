@@ -18,6 +18,7 @@ estate is destroyed and recreated.
 A token for calling the API, and what is in it:
 
 ```bash
+export TEST_USERNAME="<test user's address>"   # not in the repo, which is public
 TOKEN=$(./scripts/get-token.sh)
 API=$(terraform -chdir=infra/terraform/envs/dev output -raw api_invoke_url)
 ./scripts/decode-token.sh "$TOKEN"
