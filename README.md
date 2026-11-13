@@ -8,7 +8,9 @@ a Cognito-protected REST API. All infrastructure is Terraform.
 **[▶ Try it live](https://d1y0xvoewbydft.cloudfront.net)** — choose **Sign in**,
 then **Sign up** with any email address, confirm the code you are sent, and drop
 a camera-trap photo or a short clip onto the page. It runs on a small AWS budget,
-so it may be offline at times; the recording below shows what it does.
+so it may be offline at times; the recording below shows what it does. Sign-up
+codes go out through Cognito's built-in email sender, which allows about 50 a
+day, so on a busy day the code may not arrive until the next one.
 
 **[▶ Interactive architecture walkthrough](https://mingjun6886.github.io/wildlens/diagrams/pipeline.html)**
 — step through all thirteen stages of the ingest path, the queue semantics, and
@@ -110,9 +112,10 @@ timeout with a 60 s guard that keeps the frames tagged so far.
   best class, with no confidence floor, so an animal it does not know gets the
   nearest label it does. North American deer in the video test were labelled
   dingo, fallow deer, cattle and birds from frame to frame.
-- **Memory is near the ceiling.** Peak use is 2911 to 2999 MB of 3008 MB, the
-  cap AWS sets on a new account. The design calls for 4096 MB once a quota
-  increase lands.
+- **Memory is near the ceiling.** The function has 3008 MB, the cap AWS sets on
+  a new account. The cold-start benchmark above peaked at 2861 MB, but other
+  image runs reached 2999 MB and a video 2911 MB. The design calls for 4096 MB
+  once the account limit is raised.
 - **Search scans the table** and filters in memory (ADR 4). Fine at this size;
   it would need an index long before it needed anything else.
 - **Search by example is images only**, and must finish inside API Gateway's
@@ -203,3 +206,8 @@ not built.
 > four-person university group assignment (FIT5225, Monash University); this is
 > an independent rebuild with a different architecture, infrastructure-as-code,
 > CI/CD, and model-accuracy evaluation.
+
+## License
+
+[MIT](LICENSE). The model weights are not part of this repository and carry
+their own licences.
