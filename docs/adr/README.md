@@ -22,6 +22,7 @@ from a git log, which is the thing these documents exist to avoid.
 | [11](0011-let-any-address-subscribe-and-keep-state-in-sns.md) | Let any address subscribe, and keep subscription state in SNS | 8 |
 | [12](0012-observe-with-a-separate-alert-topic-emf-metrics-and-xray-in-the-tagger.md) | Observe with a separate alert topic, EMF metrics and X-Ray in the tagger | 9 |
 | [13](0013-tag-video-in-the-existing-function-with-maxn.md) | Tag video in the existing function, frame by frame, with MaxN | 12 |
+| [14](0014-floor-species-confidence-and-vote-across-video-frames.md) | Floor species confidence, and vote across video frames | after 13 |
 
 Three of these record a decision that was **reversed or corrected**: baking the
 weights into the image was built and removed, HTTP API was recommended and then
