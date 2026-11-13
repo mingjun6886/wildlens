@@ -108,6 +108,45 @@ def sample_frames(path: Path, out_dir: Path, max_frames: int = MAX_FRAMES) -> Sa
     return SampledVideo(frames=frames, duration_sec=duration, fps_assumed=assumed)
 
 
+# Same string as tagger.UNIDENTIFIED (a test pins the two together). Repeated
+# rather than imported so this module stays free of torch.
+UNIDENTIFIED = "unidentified animal"
+
+# A species must be named in at least this share of the frames that show an
+# animal. Measured (ADR 14): on four out-of-class deer clips, labels that clear
+# the species floor still flicker (dingo in 5 of 19 frames, fallow deer in 2,
+# shrike-thrush in 3), and no label reached 50% in any clip.
+MIN_FRAME_SHARE = 0.5
+
+
+def vote(per_frame: list[dict[str, int]]) -> list[dict[str, int]]:
+    """Fold species that do not hold across frames into UNIDENTIFIED.
+
+    Runs before max_n. Frames with no animal are left out of the denominator, so
+    an animal in shot for two seconds of a ten-second clip is not voted out. The
+    count is kept: a folded detection was still an animal.
+    """
+    animal_frames = [tags for tags in per_frame if tags]
+    frames_named: dict[str, int] = {}
+    for tags in animal_frames:
+        for name in tags:
+            frames_named[name] = frames_named.get(name, 0) + 1
+
+    needed = MIN_FRAME_SHARE * len(animal_frames)
+    dropped = {
+        name for name, frames in frames_named.items() if name != UNIDENTIFIED and frames < needed
+    }
+
+    result = []
+    for tags in per_frame:
+        kept = {name: count for name, count in tags.items() if name not in dropped}
+        folded = sum(count for name, count in tags.items() if name in dropped)
+        if folded:
+            kept[UNIDENTIFIED] = kept.get(UNIDENTIFIED, 0) + folded
+        result.append(kept)
+    return result
+
+
 def max_n(per_frame: list[dict[str, int]]) -> dict[str, int]:
     """For each species, the largest count seen in any single frame.
 

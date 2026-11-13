@@ -136,6 +136,16 @@ def _to_tag(scientific_name: str, label_map: dict[str, str]) -> str:
 # here would silently discard detections and change the result.
 DETECTION_FLOOR = 0.005
 
+# The classifier always names one of its 46 classes, so an animal it was never
+# trained on still gets a confident-looking species. Below this softmax
+# probability the detection keeps its count but is stored as UNIDENTIFIED.
+# Measured (ADR 14): every correct detection on the 26-image answer key scored at
+# least 0.970, and 0.90 rejects 95 of 131 detections in out-of-class deer
+# footage. 0.95 would reject more but sits 0.02 from the lowest correct score on
+# a 39-detection sample, too close to trust.
+SPECIES_FLOOR = 0.90
+UNIDENTIFIED = "unidentified animal"
+
 
 def _detect(detector, path: str) -> dict:
     """Run MegaDetector on one image, returning its record for that image.
@@ -170,6 +180,7 @@ def tag_images(
     classes: list[str],
     label_map: dict[str, str],
     conf_thresh: float = 0.05,
+    species_floor: float = SPECIES_FLOOR,
 ) -> dict[str, dict[str, int]]:
     """Tag several images with an already-loaded MegaDetector.
 
@@ -238,8 +249,11 @@ def tag_images(
 
             logits = species_model(tensor)
             probabilities = torch.softmax(logits, dim=1)[0].cpu().numpy()
-            scientific_name = classes[int(probabilities.argmax())]
-            counter[_to_tag(scientific_name, label_map)] += 1
+            best = int(probabilities.argmax())
+            if probabilities[best] < species_floor:
+                counter[UNIDENTIFIED] += 1
+            else:
+                counter[_to_tag(classes[best], label_map)] += 1
 
         results[path] = dict(counter)
 
@@ -253,6 +267,7 @@ def tag_image(
     classes: list[str],
     label_map: dict[str, str],
     conf_thresh: float = 0.05,
+    species_floor: float = SPECIES_FLOOR,
 ) -> dict[str, int]:
     """Tag a single image. Returns {common_name: count}, empty if nothing found.
 
@@ -260,5 +275,5 @@ def tag_image(
     exactly one file.
     """
     return tag_images(
-        [image_path], detector, species_model, classes, label_map, conf_thresh
+        [image_path], detector, species_model, classes, label_map, conf_thresh, species_floor
     ).get(str(image_path), {})

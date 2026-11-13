@@ -106,10 +106,12 @@ timeout with a 60 s guard that keeps the frames tagged so far.
 
 ## Known limitations
 
-- **The species model knows 46 classes, mostly Australian.** It always picks its
-  best class, with no confidence floor, so an animal it does not know gets the
-  nearest label it does. North American deer in the video test were labelled
-  dingo, fallow deer, cattle and birds from frame to frame.
+- **The species model knows 46 classes, mostly Australian.** An animal outside
+  them cannot be named. A confidence floor and, for video, a vote across frames
+  store it as `unidentified animal` instead of the nearest class (ADR 14): four
+  clips of North American deer, once tagged dingo, fallow deer, cattle and birds,
+  now read `unidentified animal`. The cost is that a known species seen clearly
+  in fewer than half of a clip's frames is not named either.
 - **Memory is near the ceiling.** Peak use is 2911 to 2999 MB of 3008 MB, the
   cap AWS sets on a new account. The design calls for 4096 MB once a quota
   increase lands.
@@ -134,7 +136,7 @@ timeout with a 60 s guard that keeps the frames tagged so far.
 - Design document: [`docs/design/`](docs/design/), covering goals, the data
   model, the API contract, the ML pipeline, error handling, observability, cost
   controls and the build plan.
-- Decisions: [`docs/adr/`](docs/adr/), thirteen records written when each
+- Decisions: [`docs/adr/`](docs/adr/), fourteen records written when each
   decision was taken. Three record a decision that a measurement reversed or
   corrected, kept rather than tidied away.
 - Operations: [`docs/runbook.md`](docs/runbook.md).

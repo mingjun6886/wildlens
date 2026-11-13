@@ -39,7 +39,7 @@ from model_loader import artefact_bucket, artefact_version, get_models
 from notify import publish_tags
 from tagger import tag_image
 from tracing import span
-from video import VIDEO_SUFFIXES, UnreadableVideo, busiest_frame, max_n, sample_frames
+from video import VIDEO_SUFFIXES, UnreadableVideo, busiest_frame, max_n, sample_frames, vote
 
 # True until the first invocation finishes. A warm invocation reuses the same
 # execution environment, and therefore the same module globals, so this flag
@@ -351,7 +351,12 @@ def tag_video(
         # The mean per frame, so InferenceDuration keeps meaning "time to tag one
         # image" and the dashboard's percentiles stay comparable with images.
         return Tagged(
-            "video", max_n(per_frame), model_load_ms, tagging_ms // len(per_frame), thumb_key, extra
+            "video",
+            max_n(vote(per_frame)),
+            model_load_ms,
+            tagging_ms // len(per_frame),
+            thumb_key,
+            extra,
         )
     finally:
         shutil.rmtree(frame_dir, ignore_errors=True)

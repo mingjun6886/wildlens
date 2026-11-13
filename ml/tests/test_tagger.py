@@ -29,8 +29,11 @@ class FakeSpeciesModel:
     effect.
     """
 
-    def __init__(self, class_index: int):
+    def __init__(self, class_index: int, logit: float = 10.0):
+        # 10 over 45 zeros is a softmax of about 0.998, well above the species
+        # floor; 2 is about 0.14, the kind of guess the floor exists to reject.
         self.class_index = class_index
+        self.logit = logit
         self.calls = 0
 
     def parameters(self):
@@ -39,7 +42,7 @@ class FakeSpeciesModel:
     def __call__(self, _tensor):
         self.calls += 1
         logits = torch.zeros(1, len(tagger.CLASSES))
-        logits[0, self.class_index] = 10.0
+        logits[0, self.class_index] = self.logit
         return logits
 
 
@@ -202,6 +205,55 @@ def test_threshold_is_configurable(image_file, label_map):
 
     assert strict == {image_file: {}}
     assert lenient == {image_file: {"wild boar": 1}}
+
+
+def test_a_guess_below_the_species_floor_is_an_unidentified_animal(image_file, label_map):
+    """The detector saw an animal; the classifier only guessed what it was."""
+    boar = tagger.CLASSES.index("Sus_scrofa")
+    detector = detector_for(image_file, [animal(), animal()])
+
+    result = tagger.tag_images(
+        [image_file], detector, FakeSpeciesModel(boar, logit=2.0), tagger.CLASSES, label_map
+    )
+
+    assert result == {image_file: {tagger.UNIDENTIFIED: 2}}
+
+
+def test_unidentified_animal_is_the_stored_tag():
+    """Search matches tags as stored strings, so the wording is part of the API."""
+    assert tagger.UNIDENTIFIED == "unidentified animal"
+
+
+def test_the_species_floor_is_configurable(image_file, label_map):
+    boar = tagger.CLASSES.index("Sus_scrofa")
+    detector = detector_for(image_file, [animal()])
+
+    result = tagger.tag_images(
+        [image_file],
+        detector,
+        FakeSpeciesModel(boar, logit=2.0),
+        tagger.CLASSES,
+        label_map,
+        species_floor=0.1,
+    )
+
+    assert result == {image_file: {"wild boar": 1}}
+
+
+def test_tag_image_passes_the_species_floor_through(image_file, label_map):
+    boar = tagger.CLASSES.index("Sus_scrofa")
+    detector = detector_for(image_file, [animal()])
+
+    result = tagger.tag_image(
+        image_file,
+        detector,
+        FakeSpeciesModel(boar, logit=2.0),
+        tagger.CLASSES,
+        label_map,
+        species_floor=0.1,
+    )
+
+    assert result == {"wild boar": 1}
 
 
 # --- edge cases ------------------------------------------------------------

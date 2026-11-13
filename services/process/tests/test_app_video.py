@@ -81,6 +81,17 @@ def test_a_video_record_has_its_type_frame_count_duration_and_max_n_tags(app):
     assert result["tags"] == {"dingo": 2, "emu": 3}
 
 
+def test_labels_that_do_not_hold_across_frames_become_unidentified(app):
+    """The deer clip, before this: dingo, fallow deer and cattle for one animal."""
+    unknown = "unidentified animal"
+    app.frame_tags = [{"dingo": 1}, {unknown: 2}, {"fallow deer": 1}, {unknown: 1}, {"cattle": 1}]
+
+    result = app.process_object("raw", "clip.avi", "cid", cold_start=False)
+
+    assert result["tags"] == {unknown: 2}
+    assert app.published == [{unknown: 2}]
+
+
 def test_the_video_thumbnail_is_a_jpeg_named_after_the_file(app):
     app.process_object("raw", "clip.avi", "cid", cold_start=False)
 
@@ -188,3 +199,10 @@ def test_the_queue_path_passes_the_lambda_deadline(app):
 
     assert result == {"batchItemFailures": []}
     assert app.failures[0].startswith("ran out of time")
+
+
+def test_video_and_tagger_agree_on_the_unidentified_tag():
+    import tagger
+    import video
+
+    assert video.UNIDENTIFIED == tagger.UNIDENTIFIED

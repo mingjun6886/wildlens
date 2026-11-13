@@ -130,6 +130,48 @@ def test_max_n_of_empty_frames_is_empty():
     assert video.max_n([{}, {}]) == {}
 
 
+# --- vote --------------------------------------------------------------------
+
+U = "unidentified animal"
+
+
+def test_a_species_named_in_half_the_animal_frames_is_kept():
+    per_frame = [{"emu": 1}, {"emu": 1}, {U: 1}, {U: 1}]
+    assert video.vote(per_frame) == per_frame
+
+
+def test_a_flickering_label_is_folded_into_unidentified():
+    """The deer clip: one animal, named differently from frame to frame."""
+    per_frame = [{"dingo": 1}, {"fallow deer": 1}, {"dingo": 1}, {U: 1}, {"cattle": 1}]
+    assert video.vote(per_frame) == [{U: 1}] * 5
+
+
+def test_folded_counts_add_to_an_unidentified_count_in_the_same_frame():
+    per_frame = [{"dingo": 1, U: 1}, {U: 2}, {U: 2}]
+    assert video.vote(per_frame) == [{U: 2}, {U: 2}, {U: 2}]
+
+
+def test_frames_with_no_animal_do_not_count_against_a_species():
+    """An animal in shot for 2 s of a 10 s clip is still that animal."""
+    per_frame = [{}, {}, {"emu": 1}, {"emu": 2}, {U: 1}, {}, {}]
+    assert video.vote(per_frame) == per_frame
+
+
+def test_every_surviving_species_is_kept_together():
+    per_frame = [{"emu": 1, "dingo": 1}, {"emu": 1, "dingo": 1}, {"emu": 1}]
+    assert video.vote(per_frame) == per_frame
+
+
+def test_vote_of_no_frames_is_empty():
+    assert video.vote([]) == []
+
+
+def test_vote_does_not_change_its_input():
+    per_frame = [{"dingo": 1}, {U: 1}, {U: 1}]
+    video.vote(per_frame)
+    assert per_frame == [{"dingo": 1}, {U: 1}, {U: 1}]
+
+
 # --- busiest_frame -----------------------------------------------------------
 
 
